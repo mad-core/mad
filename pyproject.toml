@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "mad"
+name = "mad-bros"
 version = "0.1.0"
 description = "Multi Agent Develop — self-hosted autonomous Claude sessions against GitHub repos."
 readme = "README.md"
@@ -76,7 +76,7 @@ version_toml = ["pyproject.toml:project.version"]
 version_variables = ["src/mad/__init__.py:__version__"]
 branch = "main"
 upload_to_vcs_release = true
-build_command = "python -m build"
+build_command = "python -m pip install build && python -m build"
 commit_message = "chore(release): {version}\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>"
 commit_parser = "conventional"
 major_on_zero = false

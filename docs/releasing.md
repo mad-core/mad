@@ -69,7 +69,7 @@ Register the publisher **before** the first release. PyPI lets you create a
 
 | Field              | Value         |
 | ------------------ | ------------- |
-| PyPI project name  | `mad`         |
+| PyPI project name  | `mad-bros`    |
 | Owner              | `jlsaco`      |
 | Repository name    | `mad`         |
 | Workflow filename  | `release.yml` |
