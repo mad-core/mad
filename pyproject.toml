@@ -6,7 +6,23 @@ build-backend = "hatchling.build"
 name = "mad"
 version = "0.1.0"
 description = "Multi Agent Develop — self-hosted autonomous Claude sessions against GitHub repos."
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [
+  { name = "Jose Salamanca", email = "jose.salamancacoy@gmail.com" },
+  { name = "Cristian Moreno", email = "cristianfmoreno95@gmail.com" },
+]
 requires-python = ">=3.11"
+keywords = ["claude", "agents", "automation", "github"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: POSIX :: Linux",
+  "Framework :: FastAPI",
+]
 dependencies = [
   "fastapi>=0.110",
   "uvicorn[standard]>=0.29",
@@ -15,16 +31,60 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
+dev = [
+  "pytest>=8.0",
+  "pytest-asyncio>=0.23",
+  "build>=1.2",
+  "twine>=5.1",
+  "python-semantic-release>=9.8",
+]
 
 [project.scripts]
 mad = "mad.cli:main"
 
+[project.urls]
+Homepage = "https://github.com/jlsaco/mad"
+Issues = "https://github.com/jlsaco/mad/issues"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/mad"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "src/mad",
+  "README.md",
+  "LICENSE",
+  "CHANGELOG.md",
+  "pyproject.toml",
+]
+exclude = [
+  "venv",
+  ".venv",
+  "sessions",
+  "tests/fixtures/tmp",
+  "**/__pycache__",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 addopts = "-ra"
 pythonpath = ["src"]
+
+[tool.semantic_release]
+version_toml = ["pyproject.toml:project.version"]
+version_variables = ["src/mad/__init__.py:__version__"]
+branch = "main"
+upload_to_vcs_release = true
+build_command = "python -m build"
+commit_message = "chore(release): {version}\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>"
+commit_parser = "conventional"
+major_on_zero = false
+tag_format = "v{version}"
+
+[tool.semantic_release.changelog]
+changelog_file = "CHANGELOG.md"
+
+[tool.semantic_release.branches.main]
+match = "main"
+prerelease = false

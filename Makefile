@@ -1,4 +1,4 @@
-.PHONY: help venv install test serve clean
+.PHONY: help venv install test serve clean build release-dry
 
 PY ?= python3
 VENV ?= venv
@@ -13,6 +13,8 @@ help:
 	@echo "  make test      Run the pytest suite"
 	@echo "  make serve     Run uvicorn on $(HOST):$(PORT) (override with HOST=/PORT=)"
 	@echo "  make clean     Remove caches, build artifacts, and sessions/"
+	@echo "  make build     Build sdist + wheel into dist/"
+	@echo "  make release-dry  Preview the next semantic-release version"
 
 venv:
 	$(PY) -m venv $(VENV)
@@ -29,3 +31,9 @@ serve:
 
 clean:
 	rm -rf .pytest_cache **/__pycache__ build dist *.egg-info sessions
+
+build:
+	$(BIN)/python -m build
+
+release-dry:
+	$(BIN)/semantic-release version --print
