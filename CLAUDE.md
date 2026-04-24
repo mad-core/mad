@@ -4,7 +4,7 @@ Project conventions and hard rules for anyone (human or Claude) working in this 
 
 ## What this project is
 
-**Mad** (Multi Agent Develop) is a self-hosted system that runs autonomous Claude sessions against GitHub repositories. The current milestone is **v0.1** — a FastAPI service that provisions workspaces, clones repos, and runs an agent loop. Full spec in [`specs/v0.1/`](specs/v0.1/README.md).
+**Mad** (Multi Agent Develop) is a self-hosted system that runs autonomous Claude sessions against GitHub repositories. The current milestone is **v0.1** — a FastAPI service that provisions workspaces, clones repos, and runs an agent loop. Full spec in [`specs/infra/`](specs/infra/README.md).
 
 ## Development workflow
 
@@ -74,7 +74,7 @@ The `mad` console script (`mad serve`) is also available once the package is ins
 
 ## Key files
 
-- `specs/v0.1/` — spec-driven package for the current milestone.
+- `specs/infra/` — spec-driven package for the current milestone.
 - `docs/backlog.md` — improvements deferred past v0.1.
 - `docs/sandbox-bwrap.md` — operator's guide for hardening the sandbox with bubblewrap.
 - `pyproject.toml` — package metadata, dependencies, build backend, and the `mad` console script. Single source of truth for `pip install -e .`.

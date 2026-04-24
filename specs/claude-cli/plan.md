@@ -5,7 +5,6 @@
 ```
 Python 3.11+ stdlib only:
   asyncio          (asyncio.create_subprocess_exec, asyncio.timeout)
-  json             (payload serialisation, stream-json line parsing)
   os               (os.environ for MAD_CLAUDE_CLI_BIN / MAD_CLAUDE_CLI_TIMEOUT_S)
   shutil           (shutil.which for PATH resolution)
 ```
@@ -14,24 +13,29 @@ No new entries in `pyproject.toml` dependencies. No Anthropic SDK import in `mad
 
 ## Implementation rules
 
-1. **Replace the stub, keep the file.** Edit `src/mad/providers/claude_cli.py` in place. Remove the `NotImplementedError` body (lines 6–8). Keep the module-level docstring. Do not touch `src/mad/providers/base.py` — the `LLMProvider` Protocol, `ProviderResponse`, and `ToolUse` dataclasses are the contract; this implementation must satisfy them without modifying them.
+1. **Replace the stub, keep the file.** Edit `src/mad/providers/claude_cli.py` in place. The new `ClaudeCLIProvider` does NOT implement the `LLMProvider` Protocol (which expects `complete(system, messages, tools) -> ProviderResponse`). Instead it exposes a single async method `run(prompt, workspace, session_id, emit)`. Update `mad.providers.factory` and `mad.agent` accordingly.
 
-2. **Private parser helper in the same module.** Add `_StreamJsonParser` as a private class inside `src/mad/providers/claude_cli.py`, not as a new sub-package. The parser's public interface is `feed(line: str) -> None` and `result() -> ProviderResponse`. Raise `ClaudeCLIError` from `feed()` if a line is not valid JSON (defensive; should not happen with a well-behaved CLI).
+2. **`ClaudeCLIError` in the same module.** Define the exception class inside `src/mad/providers/claude_cli.py`. It is not shared with other providers.
 
-3. **Factory needs no change (verify only).** `src/mad/providers/factory.py` already dispatches on `"claude_cli"` by name. After the stub is replaced the dispatch will work. If the constructor of `ClaudeCLIProvider` gains any required arguments, the factory must be updated accordingly — but the design intentionally puts all config in env vars so the constructor stays `ClaudeCLIProvider()` with no required args.
+3. **Harness delegates, not loops.** When `agent.provider == "claude_cli"`, `mad.agent` calls `provider.run(...)` once and awaits it. There is no turn loop, no tool execution, no tool_result handling for this provider path. The existing loop code in `mad.agent.loop` continues to serve the `anthropic_api` path unchanged.
 
-4. **New tests under `tests/unit/providers/test_claude_cli.py`.** Cover AC-1 through AC-5 using fake subprocesses (either a tiny Python script written to `tmp_path` or `monkeypatch` of `asyncio.create_subprocess_exec`). Do not import the real `claude` binary. Do not set `ANTHROPIC_API_KEY`. Reuse `pytest.mark.asyncio` from the existing test suite.
+4. **New tests under `tests/unit/providers/test_claude_cli.py`.** Cover AC-1 through AC-5 using a fake binary written to `tmp_path` and pointed to via `MAD_CLAUDE_CLI_BIN`. Do not import or invoke the real `claude` binary. Do not set `ANTHROPIC_API_KEY`.
 
-5. **New fixture `claude_cli_with_fake_bin` in `tests/conftest.py`.** The fixture writes a minimal fake `claude` Python script to `tmp_path`, marks it executable, sets `MAD_CLAUDE_CLI_BIN` in the environment via `monkeypatch`, and yields a `ClaudeCLIProvider()` instance. The fake script emits a hard-coded stream-json transcript that includes one text block and one `tool_use` block. This fixture powers AC-6.
+5. **Fake binary pattern.** The fake binary is a small Python script written to `tmp_path/claude`, marked executable (`chmod 0o755`), and pointed to via `monkeypatch.setenv("MAD_CLAUDE_CLI_BIN", str(path))`. It can be parameterised per test to emit different outputs or exit codes.
 
-6. **Do not create `specs/claude-cli/api.md`.** The HTTP surface is unchanged. State this explicitly in `README.md` and in any PR description so reviewers know the omission is intentional and not an oversight.
+   Example fake binary that emits two lines and exits 0:
+   ```python
+   #!/usr/bin/env python3
+   print("Exploring repository...")
+   print("Done.")
+   ```
+
+6. **Do not create `specs/claude-cli/api.md`.** The HTTP surface is unchanged.
 
 ## Out of scope
 
-The following are explicitly deferred. See [`../../docs/backlog.md`](../../docs/backlog.md) for the backlog context.
-
-- **Resumable CLI sessions (`claude --resume <id>`).** Each `complete()` call starts a fresh process. Resumable sessions require tracking a CLI session ID across turns and are a separate backlog item.
-- **Automatic `claude login` flow from Mad.** The operator authenticates once on the host (`claude login`). Mad never calls `claude login`, stores credentials, or detects that the CLI is unauthenticated beyond raising `ClaudeCLIError` with the CLI's own error message.
-- **Windows support.** The implementation uses POSIX subprocess semantics (`proc.kill()`, `stdin.close()`, signal handling). Windows is not a supported platform for this feature.
-- **Concurrency limits across a single Pro account.** Claude Pro/Max accounts have rate limits. If multiple Mad sessions simultaneously call `ClaudeCLIProvider.complete()`, they will each spawn a `claude` process. Throttling, queue depth, and account-level rate limit handling are the operator's responsibility. The risk is documented here; mitigation is a future backlog item.
-- **MCP server passthrough.** If the local `claude` CLI is configured with MCP servers in `~/.claude/`, those tools load automatically into the CLI session. Mad has no visibility into those tool schemas and cannot route their calls through the harness. MCP passthrough is a distinct feature.
+- **Multi-turn via the same subprocess.** Each `user.message` is a fresh invocation. Persistent interactive sessions are a backlog item.
+- **Automatic `claude login`.** The operator authenticates once on the host. Mad never manages credentials.
+- **Windows support.** POSIX subprocess semantics only (`proc.kill()`, signal handling).
+- **Concurrency limits.** Multiple simultaneous sessions each spawn their own `claude` process. Rate-limit handling is the operator's responsibility.
+- **MCP passthrough.** MCP servers configured in `~/.claude/` are loaded by the CLI automatically; Mad has no visibility.

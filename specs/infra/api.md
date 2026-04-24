@@ -1,4 +1,4 @@
-# API Contract — Mad v0.1
+# API Contract — Mad infra
 
 Base path: `/v1`.
 Content type: `application/json` unless otherwise noted.

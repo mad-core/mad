@@ -1,4 +1,4 @@
-# Design — Mad v0.1
+# Design — Mad infra
 
 ## Overview
 

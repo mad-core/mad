@@ -1,4 +1,4 @@
-# Implementation Plan — Mad v0.1
+# Implementation Plan — Mad infra
 
 ## Stack
 
@@ -57,7 +57,7 @@ Mad does NOT install per-session packages. Anything the agent needs inside the w
 
 10. **Dual logging.** Every action is printed to stdout AND appended to the JSONL session log. The session log is the source of truth.
 
-## Out of scope for v0.1
+## Out of scope for infra
 
 The following are deliberately deferred. See [`../../docs/backlog.md`](../../docs/backlog.md) for rationale and proposed approaches:
 

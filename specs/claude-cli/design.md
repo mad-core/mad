@@ -2,164 +2,108 @@
 
 ## Overview
 
-`ClaudeCLIProvider` is a thin async wrapper around the `claude` CLI subprocess. It translates the `LLMProvider.complete()` call into a subprocess invocation, feeds the conversation context on stdin, streams the structured JSON response from stdout, and maps it into the shared `ProviderResponse` type. No network calls, no SDK, no credential management — the CLI handles all of that.
+`ClaudeCLIProvider` is a thin async launcher. It spawns the `claude` CLI inside the session workspace, streams its stdout as session events, waits for exit, and maps the exit code to a session status. There is no message loop, no tool execution, no JSON parsing — Claude Code handles all of that internally.
 
 ```
 mad.agent (harness)
         │
-        │  complete(system, messages, tools)
+        │  run(prompt, workspace, session_id)
         ▼
 ClaudeCLIProvider
         │
-        │  asyncio.create_subprocess_exec("claude", "--print",
-        │      "--output-format", "stream-json", "--verbose",
-        │      stdin=PIPE, stdout=PIPE, stderr=PIPE)
+        │  asyncio.create_subprocess_exec(
+        │      "claude", "--dangerously-skip-permissions", "-p", prompt,
+        │      cwd=workspace,
+        │      stdout=PIPE, stderr=PIPE,
+        │  )
         │
-        │  stdin ◄── JSON payload (one blob, then EOF)
-        │
-        │  stdout ──► _StreamJsonParser (line-by-line)
-        │
-        ▼
-ProviderResponse(text, tool_uses, stop_reason)
+        │  stdout ──► line-by-line ──► emit agent.output
+        │  stderr ──► captured in memory (for error reporting only)
         │
         ▼
-mad.agent (harness continues)
+exit code 0  ──► emit session.status_idle
+exit code != 0 ──► scrub stderr, emit session.error
 ```
 
-## Stdin payload shape
+## What Claude Code does internally
 
-The provider writes exactly one JSON object to stdin, then closes the pipe (EOF signals end of input to the CLI):
+Mad does not see or manage any of this — it is listed here only for clarity:
 
-```json
-{
-  "system": "<system prompt string>",
-  "messages": [
-    {"role": "user", "content": [{"type": "text", "text": "..."}]},
-    {"role": "assistant", "content": [
-      {"type": "tool_use", "id": "tu_1", "name": "bash", "input": {"cmd": "ls"}}
-    ]},
-    {"role": "user", "content": [
-      {"type": "tool_result", "tool_use_id": "tu_1", "content": "file_a\nfile_b"}
-    ]}
-  ],
-  "tools": [
-    {
-      "name": "bash",
-      "description": "Run a shell command",
-      "input_schema": {"type": "object", "properties": {"cmd": {"type": "string"}}, "required": ["cmd"]}
-    }
-  ]
-}
-```
+- Claude Code reads the prompt and decides what to do.
+- It runs bash commands, reads and writes files, searches the codebase.
+- It loops through as many turns as needed.
+- It prints human-readable progress to stdout.
+- When done, it exits with code 0.
 
-The `messages` and `tools` lists are forwarded verbatim from the `complete()` arguments — no transformation, no encoding of `tool_result` blocks into text.
-
-## Stream-json parser state machine
-
-The CLI emits one JSON object per stdout line. `_StreamJsonParser` reads lines and transitions through these states:
+## Process lifecycle
 
 ```
-IDLE
-  │
-  │  line: {"type": "message_start", ...}
-  ▼
-IN_MESSAGE
-  │
-  ├── line: {"type": "content_block_start", "content_block": {"type": "text"}}
-  │     ▼  ACCUMULATING_TEXT
-  │     │  line: {"type": "content_block_delta", "delta": {"type": "text_delta", "text": "..."}}
-  │     │    → append delta.text to current_text_buffer
-  │     │  line: {"type": "content_block_stop"}
-  │     │    → flush current_text_buffer into response.text
-  │     ▼  back to IN_MESSAGE
-  │
-  ├── line: {"type": "content_block_start", "content_block": {"type": "tool_use", "id": ..., "name": ...}}
-  │     ▼  ACCUMULATING_TOOL_USE
-  │     │  line: {"type": "content_block_delta", "delta": {"type": "input_json_delta", "partial_json": "..."}}
-  │     │    → append partial_json to current_tool_json_buffer
-  │     │  line: {"type": "content_block_stop"}
-  │     │    → json.loads(current_tool_json_buffer) → ToolUse(id, name, input)
-  │     │    → append to response.tool_uses
-  │     ▼  back to IN_MESSAGE
-  │
-  └── line: {"type": "message_delta", "delta": {"stop_reason": "..."}}
-  │     → capture stop_reason
-  │
-  └── line: {"type": "message_stop"}  (or {"type": "result"})
-        ▼
-      DONE  → return ProviderResponse
-```
-
-Lines with unknown `type` values are silently skipped. Only `assistant`-role content blocks contribute to `ProviderResponse.text` or `ProviderResponse.tool_uses`. Auth-related or diagnostic events from `--verbose` are consumed and discarded.
-
-## Subprocess lifecycle
-
-```
-1. Resolve the executable:
+1. Resolve executable:
    - Read MAD_CLAUDE_CLI_BIN from env; fall back to shutil.which("claude").
-   - If neither resolves, raise ClaudeCLIError(exit_code=None, stderr_tail="claude not found on PATH").
+   - If neither resolves, emit session.error("claude not found on PATH") and return.
 
 2. Spawn:
    proc = await asyncio.create_subprocess_exec(
-       executable, "--print", "--output-format", "stream-json", "--verbose",
-       stdin=asyncio.subprocess.PIPE,
+       executable,
+       "--dangerously-skip-permissions",
+       "-p", prompt,
+       cwd=workspace_path,
        stdout=asyncio.subprocess.PIPE,
        stderr=asyncio.subprocess.PIPE,
    )
 
-3. Write stdin:
-   payload = json.dumps({"system": system, "messages": messages, "tools": tools})
-   proc.stdin.write(payload.encode())
-   await proc.stdin.drain()
-   proc.stdin.close()
-
-4. Stream stdout with timeout:
+3. Stream stdout with timeout:
    async with asyncio.timeout(timeout_seconds):
-       async for line in proc.stdout:
-           parser.feed(line.decode())
+       async for raw_line in proc.stdout:
+           line = raw_line.decode(errors="replace").rstrip()
+           await emit(session_id, "agent.output", {"line": line})
 
-5. Wait for exit:
+4. Wait for exit:
    await proc.wait()
 
-6. Map exit code:
-   - exit code 0  → return parser.result()
-   - exit code != 0 → read stderr tail (last 2 KB), scrub token patterns,
-                       raise ClaudeCLIError(exit_code, stderr_tail)
+5. Map exit code:
+   - 0       → emit session.status_idle(stop_reason="end_turn")
+   - != 0    → read stderr, scrub token patterns, emit session.error
 
-7. On asyncio.CancelledError or asyncio.TimeoutError:
+6. On asyncio.CancelledError or asyncio.TimeoutError:
    proc.kill()
    await proc.wait()
-   raise  (re-raise the original exception so the harness can record session.error)
+   emit session.error("timed out" or "cancelled")
+   raise  (re-raise so the harness records it correctly)
 ```
 
-## ClaudeCLIError taxonomy
+## Event vocabulary for this provider
 
-`ClaudeCLIError` is defined in `mad.providers.claude_cli` (not in `base.py`):
+| Event | When |
+|---|---|
+| `agent.output` | Each stdout line from the claude process |
+| `session.status_idle` | Process exited with code 0 |
+| `session.error` | Process exited non-zero, timed out, binary not found, or cancelled |
+
+The events `agent.tool_use` and `agent.tool_result` are NOT emitted by this provider. Claude Code manages tool use internally and does not expose individual tool calls to Mad.
+
+## ClaudeCLIError
 
 ```python
 class ClaudeCLIError(RuntimeError):
     def __init__(self, exit_code: int | None, stderr_tail: str) -> None:
         self.exit_code = exit_code
-        self.stderr_tail = stderr_tail  # last 2 KB of stderr, token patterns scrubbed
+        self.stderr_tail = stderr_tail  # last 2 KB, token patterns scrubbed
         super().__init__(f"claude CLI failed (exit={exit_code}): {stderr_tail}")
 ```
 
-Subtypes by cause:
-
-| Cause | exit_code | stderr_tail content |
+| Cause | exit_code | stderr_tail |
 |---|---|---|
 | Binary not found | `None` | `"claude not found on PATH"` |
-| Auth failure (not logged in) | non-zero | CLI's auth error message (scrubbed) |
 | Timeout | `None` | `"timed out after {N}s"` |
-| Non-zero exit (other) | non-zero | Last 2 KB of stderr (scrubbed) |
+| Non-zero exit | non-zero | last 2 KB of stderr (scrubbed) |
 
-Scrubbing removes strings that match the pattern of Anthropic API keys (`sk-ant-...`) and any value from environment variables whose names contain `TOKEN`, `KEY`, or `SECRET`. Scrubbing replaces matched spans with `[REDACTED]`.
+Scrubbing replaces `sk-ant-...` patterns and values of env vars whose names contain `TOKEN`, `KEY`, or `SECRET` with `[REDACTED]`.
 
 ## Explicit non-goals
 
-The following design choices are intentional and out of scope for this implementation:
-
-- **No `--resume` flag.** Each `complete()` call is a fresh subprocess invocation. The session ID and turn management live in `mad.core`, not in the CLI process. Resumable CLI sessions are deferred — see `docs/backlog.md`.
-- **No session ID juggling.** The provider does not track `--session-id` across calls. Statefulness is provided by the `messages` history that the harness accumulates.
-- **No interactive mode.** The subprocess reads stdin, produces stdout, and exits. There is no persistent interactive process shared across turns.
-- **No MCP passthrough.** Any MCP server configuration in `~/.claude/` that the CLI picks up by default is not managed by Mad. If the CLI loads MCP tools automatically, those tool schemas are not surfaced to the harness and their calls will be unresolvable.
+- **No conversation loop.** Each `user.message` triggers one fresh subprocess. Multi-turn state is managed by Claude Code internally across its own loop, not across multiple subprocess invocations.
+- **No tool routing.** Mad never sees tool_use blocks. If Claude Code calls bash or edits a file, that happens inside the subprocess.
+- **No stdin payload.** Unlike the `anthropic_api` provider, there is no message history serialised to stdin. The prompt is passed as a CLI argument (`-p`). Claude Code manages its own context.
+- **No interactive mode.** The subprocess reads the prompt, works, and exits. There is no persistent process shared across turns.
+- **No MCP management.** If `~/.claude/` has MCP servers configured, Claude Code will use them. Mad has no visibility into this.

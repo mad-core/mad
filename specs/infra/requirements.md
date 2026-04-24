@@ -1,4 +1,4 @@
-# Requirements — Mad v0.1
+# Requirements — Mad infra
 
 ## Goal
 
@@ -51,7 +51,7 @@ Tool calls MUST use Anthropic's native structured tool use (SDK `tools=[...]` wi
 - **NFR-2 — Token hygiene.** GitHub tokens are used to clone and then stripped from the remote. They are never persisted to the workspace.
 - **NFR-3 — Dual logging.** Every action is printed to stdout AND appended to the session log. The log is the source of truth.
 - **NFR-4 — Environment preparation is out of scope.** The operator prepares the server's Python environment manually (`python -m venv .venv && pip install -r requirements.txt`). Mad does NOT install per-session packages. Any dependency the agent needs inside the workspace must already be available on the host, or the agent installs it as part of its work.
-- **NFR-5 — Sandbox hardening is operator's responsibility.** v0.1 executes sandbox commands as subprocesses of the FastAPI process. Hardening via `bubblewrap` or similar is documented in [`../../docs/sandbox-bwrap.md`](../../docs/sandbox-bwrap.md) and left to the operator.
+- **NFR-5 — Sandbox hardening is operator's responsibility.** The current implementation executes sandbox commands as subprocesses of the FastAPI process. Hardening via `bubblewrap` or similar is documented in [`../../docs/sandbox-bwrap.md`](../../docs/sandbox-bwrap.md) and left to the operator.
 
 ## MVP acceptance criteria
 
