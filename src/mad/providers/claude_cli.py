@@ -71,11 +71,16 @@ class ClaudeCLIProvider:
                     line = line_bytes.decode(errors="replace").rstrip("\n")
                     await emit("agent.output", {"type": "agent.output", "line": line})
                 await proc.wait()
-        except (asyncio.TimeoutError, asyncio.CancelledError):
+        except asyncio.TimeoutError:
             proc.kill()
             await proc.wait()
-            await emit("session.error", {"type": "session.error", "error": "claude CLI timed out"})
+            await emit("session.error", {"type": "session.error", "error": f"timed out after {timeout}s"})
             return
+        except asyncio.CancelledError:
+            proc.kill()
+            await proc.wait()
+            await emit("session.error", {"type": "session.error", "error": "cancelled"})
+            raise
 
         if proc.returncode == 0:
             await emit("session.status_idle", {"type": "session.status_idle", "stop_reason": "end_turn"})
