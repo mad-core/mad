@@ -17,8 +17,7 @@ Project conventions and hard rules for anyone (human or Claude) working in this 
 4. **Package layout.** Core logic lives in the `mad` package under `src/mad/`, split by concern:
    - `mad.api` — FastAPI app + routers. Thin HTTP layer only: parse, validate, delegate. Exposes `create_app(store=...)` as a factory.
    - `mad.core` — pure domain. Session registry, JSONL session log (hard rule 6), workspace management, path validation (hard rule 3), token hygiene (hard rule 2). No FastAPI imports here.
-   - `mad.agent` — vestigial; being phased out.
-   - `mad.providers` — `AgentLauncher` Protocol, `get_launcher` factory, and one module per implementation (`claude_cli`, `anthropic_api` stub, `fake`).
+   - `mad.providers` — `AgentLauncher` Protocol, `get_launcher` factory, and one module per implementation (`claude_cli`, `fake`).
 
    No module-level mutable globals. Session registries, SSE queues, and idempotency maps live on a `SessionStore` injected into `create_app()` so every test builds its own isolated instance. The project MUST remain `pip install -e .` compatible at all times — `pyproject.toml` owns package metadata, dependencies, and the `mad` console script.
 
@@ -64,8 +63,7 @@ The `mad` console script (`mad serve`) is also available once the package is ins
 - `pyproject.toml` — package metadata, dependencies, build backend, and the `mad` console script. Single source of truth for `pip install -e .`.
 - `src/mad/api/app.py` — `create_app(store=...)` factory and router wiring.
 - `src/mad/core/` — session log, workspace, security primitives (hard rules 2, 3, 6 enforced here).
-- `src/mad/agent/` — vestigial (empty module, being phased out).
-- `src/mad/providers/` — `AgentLauncher` protocol, `get_launcher` factory, and implementations (`claude_cli`, `anthropic_api` stub, `fake`).
+- `src/mad/providers/` — `AgentLauncher` protocol, `get_launcher` factory, and implementations (`claude_cli`, `fake`).
 - `tests/conftest.py` — shared fixtures, including `fake_launcher` (built on `FakeLauncher` from `mad.providers.fake`) and `bare_repo`. Unit tests live under `tests/unit/`, FR acceptance tests under `tests/test_acceptance.py`.
 
 ## AgentLauncher contract
@@ -84,7 +82,6 @@ class AgentLauncher(Protocol):
 
 The launcher receives the prompt, the workspace path, and an `emit` callback. It spawns the external agent, streams stdout line-by-line as `agent.output` events, and emits `session.status_idle` (exit 0) or `session.error` (non-zero / timeout) on completion. Current implementations:
 - `claude_cli` — spawns `claude --dangerously-skip-permissions -p "{prompt}"` with `cwd=workspace`. Configurable via `MAD_CLAUDE_CLI_BIN` and `MAD_CLAUDE_CLI_TIMEOUT_S`.
-- `anthropic_api` — stub (`NotImplementedError`); reserved for future direct-API integration.
 - `fake` — `FakeLauncher` test double that emits a pre-scripted sequence of events without spawning any process.
 
 The protocol lives in `mad.providers.base`. The factory `mad.providers.factory.get_launcher(agent.provider)` dispatches by name and is monkey-patched to `FakeLauncher` (from `mad.providers.fake`) in tests.
