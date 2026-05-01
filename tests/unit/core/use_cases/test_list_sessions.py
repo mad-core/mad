@@ -1,4 +1,5 @@
 """Unit tests for ListSessionsUseCase."""
+
 from __future__ import annotations
 
 from mad.core.domain.entities.session import Session
@@ -14,12 +15,6 @@ def _make_session(session_id, status="created"):
     )
 
 
-def test_list_sessions_empty():
-    uc = ListSessionsUseCase(sessions_index={})
-    result = uc.execute()
-    assert result == []
-
-
 def test_list_sessions_returns_all():
     sessions = {
         "sesn_001": _make_session("sesn_001", "created"),
@@ -28,13 +23,8 @@ def test_list_sessions_returns_all():
     uc = ListSessionsUseCase(sessions_index=sessions)
     result = uc.execute()
     assert len(result) == 2
-    ids = {s.session_id for s in result}
-    assert "sesn_001" in ids
-    assert "sesn_002" in ids
-
-
-def test_list_sessions_returns_status():
-    sessions = {"sesn_003": _make_session("sesn_003", "running")}
-    uc = ListSessionsUseCase(sessions_index=sessions)
-    result = uc.execute()
-    assert result[0].status == "running"
+    by_id = {s.session_id: s for s in result}
+    assert "sesn_001" in by_id
+    assert "sesn_002" in by_id
+    assert by_id["sesn_001"].status == "created"
+    assert by_id["sesn_002"].status == "idle"

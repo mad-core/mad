@@ -3,6 +3,7 @@
 Tests the synchronous validation path. The async launcher run is tested
 via integration tests.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -55,53 +56,96 @@ def test_send_message_session_not_found():
         uc.execute(SendUserMessageInput(session_id="sesn_missing", content="hi"))
 
 
-def test_send_message_emits_user_message_event():
+async def test_send_message_runs_launcher_and_redacts_tokens():
+    """Background task drives the full lifecycle: status_running →
+    forward emitted events through redaction → status_idle on success.
+    """
     repo = FakeRepo()
-    sessions = {"sesn_msg": _make_session()}
-    sse_queues: dict = {}
+    token = "ghp_secretXYZ"
+    sessions = {"sesn_msg": _make_session(tokens=[token])}
+    sse_queue: asyncio.Queue = asyncio.Queue()
+    sse_queues = {"sesn_msg": sse_queue}
 
-    async def fake_launcher_run(prompt, workspace, emit):
-        pass
-
-    class FakeLauncher:
+    class ScriptedLauncher:
         async def run(self, prompt, workspace, emit):
-            pass
+            await emit("agent.output", {"line": f"leak {token} bye"})
+            await emit("session.status_idle", {"stop_reason": "end_turn"})
 
     uc = SendUserMessageUseCase(
         repo=repo,
         sessions_index=sessions,
         sse_queues=sse_queues,
-        get_launcher=lambda name: FakeLauncher(),
+        get_launcher=lambda name: ScriptedLauncher(),
     )
 
-    # execute() creates an asyncio task — run in event loop
-    async def run():
-        uc.execute(SendUserMessageInput(session_id="sesn_msg", content="hello"))
-        # Let the task run
-        await asyncio.sleep(0.05)
+    uc.execute(SendUserMessageInput(session_id="sesn_msg", content="hello"))
+    while True:
+        event = await asyncio.wait_for(sse_queue.get(), timeout=1.0)
+        if event is None:
+            break
 
-    asyncio.get_event_loop().run_until_complete(run())
-
-    user_msg_events = [e for e in repo.events if e["type"] == "user.message"]
-    assert len(user_msg_events) == 1
-    assert user_msg_events[0]["content"] == "hello"
-
-
-def test_redact_tokens_replaces_in_string_values():
-    data = {"line": "output containing ghp_secret and more"}
-    result = _redact_tokens(data, ["ghp_secret"])
-    assert "ghp_secret" not in result["line"]
-    assert "[REDACTED]" in result["line"]
-
-
-def test_redact_tokens_leaves_non_string_values_unchanged():
-    data = {"count": 42, "flag": True}
-    result = _redact_tokens(data, ["ghp_secret"])
-    assert result["count"] == 42
-    assert result["flag"] is True
+    types = [e["type"] for e in repo.events]
+    assert types == [
+        "user.message",
+        "session.status_running",
+        "agent.output",
+        "session.status_idle",
+    ]
+    assert sessions["sesn_msg"].status == "idle"
+    output_event = next(e for e in repo.events if e["type"] == "agent.output")
+    assert token not in output_event["line"]
+    assert "[REDACTED]" in output_event["line"]
 
 
-def test_redact_tokens_empty_tokens_returns_same():
-    data = {"line": "nothing to redact"}
-    result = _redact_tokens(data, [])
-    assert result == data
+async def test_send_message_records_session_error_when_launcher_raises():
+    repo = FakeRepo()
+    sessions = {"sesn_msg": _make_session()}
+    sse_queue: asyncio.Queue = asyncio.Queue()
+    sse_queues = {"sesn_msg": sse_queue}
+
+    class BoomLauncher:
+        async def run(self, prompt, workspace, emit):
+            raise RuntimeError("kaboom")
+
+    uc = SendUserMessageUseCase(
+        repo=repo,
+        sessions_index=sessions,
+        sse_queues=sse_queues,
+        get_launcher=lambda name: BoomLauncher(),
+    )
+
+    uc.execute(SendUserMessageInput(session_id="sesn_msg", content="hi"))
+    while True:
+        event = await asyncio.wait_for(sse_queue.get(), timeout=1.0)
+        if event is None:
+            break
+
+    types = [e["type"] for e in repo.events]
+    assert "session.error" in types
+    assert sessions["sesn_msg"].status == "error"
+
+
+@pytest.mark.parametrize(
+    "data, tokens, check",
+    [
+        (
+            {"line": "output containing ghp_secret and more"},
+            ["ghp_secret"],
+            lambda r: "ghp_secret" not in r["line"] and "[REDACTED]" in r["line"],
+        ),
+        (
+            {"count": 42, "flag": True},
+            ["ghp_secret"],
+            lambda r: r["count"] == 42 and r["flag"] is True,
+        ),
+        (
+            {"line": "nothing to redact"},
+            [],
+            lambda r: r == {"line": "nothing to redact"},
+        ),
+    ],
+    ids=["string-redacted", "non-string-unchanged", "empty-tokens-unchanged"],
+)
+def test_redact_tokens(data, tokens, check):
+    result = _redact_tokens(data, tokens)
+    assert check(result)

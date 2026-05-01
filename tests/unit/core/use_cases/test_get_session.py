@@ -1,4 +1,5 @@
 """Unit tests for GetSessionUseCase."""
+
 from __future__ import annotations
 
 import pytest
@@ -64,6 +65,27 @@ def test_get_session_rehydrates_from_jsonl():
     assert out.status == "idle"
     # Also cached in memory
     assert "sesn_rehydrated" in sessions
+
+
+@pytest.mark.parametrize(
+    "lifecycle_event,expected_status",
+    [
+        ("session.status_running", "running"),
+        ("session.status_idle", "idle"),
+        ("session.error", "error"),
+    ],
+)
+def test_get_session_rehydrates_status_from_lifecycle_event(
+    lifecycle_event: str, expected_status: str
+):
+    """Rehydration must map each lifecycle event to the correct session status."""
+    sessions: dict[str, Session] = {}
+    repo = FakeRepo()
+    repo.append_event("sesn_lc", "session.created", {"agent": "t"})
+    repo.append_event("sesn_lc", lifecycle_event, {})
+    uc = GetSessionUseCase(repo=repo, sessions_index=sessions)
+    out = uc.execute("sesn_lc")
+    assert out.status == expected_status
 
 
 def test_get_session_returns_events():

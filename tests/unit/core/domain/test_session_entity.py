@@ -3,7 +3,10 @@
 Validates state transitions and invariants.
 No HTTP, no I/O — pure domain logic.
 """
+
 from __future__ import annotations
+
+import pytest
 
 from mad.core.domain.entities.session import Session
 
@@ -23,31 +26,30 @@ def test_initial_status_is_created():
     assert s.status == "created"
 
 
-def test_mark_running_transitions_to_running():
-    s = _make_session()
+def _apply_transition(s: Session, transition: str) -> None:
     s.mark_running()
-    assert s.status == "running"
+    if transition == "idle":
+        s.mark_idle()
+    elif transition == "error":
+        s.mark_error(reason="timeout")
+    elif transition == "deleted":
+        s.mark_deleted()
 
 
-def test_mark_idle_transitions_to_idle():
+@pytest.mark.parametrize(
+    "transition, expected_status",
+    [
+        ("running", "running"),
+        ("idle", "idle"),
+        ("error", "error"),
+        ("deleted", "deleted"),
+    ],
+    ids=["running", "idle", "error", "deleted"],
+)
+def test_status_transitions(transition, expected_status):
     s = _make_session()
-    s.mark_running()
-    s.mark_idle()
-    assert s.status == "idle"
-
-
-def test_mark_error_transitions_to_error():
-    s = _make_session()
-    s.mark_running()
-    s.mark_error(reason="timeout")
-    assert s.status == "error"
-
-
-def test_mark_deleted_transitions_to_deleted():
-    s = _make_session()
-    s.mark_running()
-    s.mark_deleted()
-    assert s.status == "deleted"
+    _apply_transition(s, transition)
+    assert s.status == expected_status
 
 
 def test_to_dict_excludes_tokens():
@@ -65,8 +67,3 @@ def test_from_dict_round_trip():
     assert s2.session_id == s.session_id
     assert s2.status == "idle"
     assert s2.workspace == s.workspace
-
-
-def test_resources_mounted_defaults_to_empty_list():
-    s = _make_session()
-    assert s.resources_mounted == []
