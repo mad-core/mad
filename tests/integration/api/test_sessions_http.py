@@ -22,6 +22,7 @@ import json
 import time
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 
@@ -316,6 +317,7 @@ def test_mvp_04b_jsonl_log_records_agent_events(
     assert "user.message" in event_types, f"log missing user.message; got {event_types}"
 
 
+@pytest.mark.smoke
 def test_mvp_04b_jsonl_log_each_line_is_valid_json(
     client: TestClient, session_payload: dict
 ) -> None:
@@ -396,6 +398,7 @@ def test_mvp_06_resume_session_with_new_message(
 # Covers FR-7 (log is source of truth across turns)
 # ---------------------------------------------------------------------------
 
+@pytest.mark.smoke
 def test_mvp_06b_resumed_session_log_contains_both_turns(
     client: TestClient, fake_launcher, session_payload: dict
 ) -> None:

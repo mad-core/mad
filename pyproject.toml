@@ -70,6 +70,9 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 addopts = "-ra"
 pythonpath = ["src"]
+markers = [
+  "smoke: hard-rule invariants that must stay green across migration phases",
+]
 
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]
