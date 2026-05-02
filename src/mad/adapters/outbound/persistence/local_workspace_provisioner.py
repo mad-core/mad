@@ -42,6 +42,7 @@ class LocalWorkspaceProvisioner:
         mount_path: str,
         repo_url: str,
         token: str | None,
+        base_branch: str | None = None,
     ) -> None:
         """Clone repo_url into workspace at mount_path, stripping the token afterwards."""
         local_path = _resolve_mount(workspace, mount_path)
@@ -61,6 +62,14 @@ class LocalWorkspaceProvisioner:
             check=True,
             capture_output=True,
         )
+
+        if base_branch:
+            result = subprocess.run(
+                ["git", "-C", str(local_path), "checkout", base_branch],
+                capture_output=True,
+            )
+            if result.returncode != 0:
+                raise ValueError(f"unknown base_branch {base_branch!r} for repository")
 
     def materialize_file(
         self,

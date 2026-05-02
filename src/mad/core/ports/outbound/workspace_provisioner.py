@@ -29,11 +29,15 @@ class WorkspaceProvisioner(Protocol):
         mount_path: str,
         repo_url: str,
         token: str | None,
+        base_branch: str | None = None,
     ) -> None:
         """Clone a GitHub repo into the workspace at mount_path.
 
         Tokens are stripped from the remote after clone (hard rule 2).
         mount_path values that escape the workspace must be rejected (hard rule 3).
+        When ``base_branch`` is provided, the clone is checked out on that
+        branch; an unknown branch must raise ``ValueError`` before the launcher
+        runs.
         """
         ...
 

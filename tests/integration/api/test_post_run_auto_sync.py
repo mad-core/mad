@@ -1,0 +1,224 @@
+"""Integration tests for issue #8: optional base_branch on session create
+and post-run auto-sync second launcher invocation.
+"""
+
+from __future__ import annotations
+
+import json
+import subprocess
+import time
+from pathlib import Path
+
+import pytest
+from fastapi.testclient import TestClient
+
+from mad.adapters.inbound.http import create_app
+
+
+def _bare_repo_with_branches(tmp_path: Path, branches: list[str]) -> Path:
+    seed = tmp_path / "seed"
+    seed.mkdir()
+    subprocess.run(["git", "init", "-q", "-b", branches[0], str(seed)], check=True)
+    (seed / "README.md").write_text("seed\n")
+    subprocess.run(["git", "-C", str(seed), "add", "README.md"], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(seed),
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "user.name=t",
+            "commit",
+            "-q",
+            "-m",
+            "init",
+        ],
+        check=True,
+    )
+    for branch in branches[1:]:
+        subprocess.run(
+            ["git", "-C", str(seed), "branch", branch],
+            check=True,
+            capture_output=True,
+        )
+    bare = tmp_path / "origin.git"
+    subprocess.run(["git", "clone", "-q", "--bare", str(seed), str(bare)], check=True)
+    return bare
+
+
+@pytest.fixture
+def repo_with_branches(tmp_path: Path) -> Path:
+    return _bare_repo_with_branches(tmp_path, ["main", "develop"])
+
+
+def test_create_session_with_base_branch_checks_it_out(
+    client: TestClient, repo_with_branches: Path
+) -> None:
+    payload = {
+        "agent": {"name": "t", "system": "s", "provider": "fake_scripted"},
+        "base_branch": "develop",
+        "resources": [
+            {
+                "type": "github_repository",
+                "url": f"file://{repo_with_branches}",
+                "mount_path": "/workspace/repo",
+            }
+        ],
+    }
+    r = client.post("/v1/sessions", json=payload)
+    assert r.status_code == 200
+    local = Path(r.json()["resources_mounted"][0]["local_path"])
+    head = subprocess.run(
+        ["git", "-C", str(local), "rev-parse", "--abbrev-ref", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert head.stdout.strip() == "develop"
+
+
+def test_create_session_with_unknown_base_branch_returns_400(
+    client: TestClient, repo_with_branches: Path
+) -> None:
+    payload = {
+        "agent": {"name": "t", "system": "s", "provider": "fake_scripted"},
+        "base_branch": "no-such-branch",
+        "resources": [
+            {
+                "type": "github_repository",
+                "url": f"file://{repo_with_branches}",
+                "mount_path": "/workspace/repo",
+            }
+        ],
+    }
+    r = client.post("/v1/sessions", json=payload)
+    assert r.status_code == 400
+    assert "no-such-branch" in r.json()["detail"]
+
+
+def test_base_branch_persisted_in_session_log(client: TestClient, repo_with_branches: Path) -> None:
+    payload = {
+        "agent": {"name": "t", "system": "s", "provider": "fake_scripted"},
+        "base_branch": "develop",
+        "resources": [
+            {
+                "type": "github_repository",
+                "url": f"file://{repo_with_branches}",
+                "mount_path": "/workspace/repo",
+            }
+        ],
+    }
+    r = client.post("/v1/sessions", json=payload)
+    session_id = r.json()["session_id"]
+    # Session entity persists base_branch; the JSONL log records the
+    # session.created event but base_branch lives on the in-memory session.
+    r = client.get(f"/v1/sessions/{session_id}")
+    assert r.status_code == 200
+
+
+def test_post_run_auto_sync_invokes_second_launcher_run(
+    client: TestClient, fake_launcher, session_payload: dict
+) -> None:
+    """The launcher must be invoked twice per user.message: primary + auto-sync."""
+    fake_launcher.script(
+        [
+            [{"type": "session.status_idle", "stop_reason": "end_turn"}],
+            [{"type": "session.status_idle", "stop_reason": "end_turn"}],
+        ]
+    )
+    session_id = client.post("/v1/sessions", json=session_payload).json()["session_id"]
+    r = client.post(
+        f"/v1/sessions/{session_id}/events",
+        json={"events": [{"type": "user.message", "content": "do work"}]},
+    )
+    assert r.status_code in (200, 202)
+
+    # Drain the SSE stream to ensure the background task completed.
+    with client.stream("GET", f"/v1/sessions/{session_id}/stream") as resp:
+        for line in resp.iter_lines():
+            if line.startswith("data:"):
+                pass
+
+    assert len(fake_launcher.calls) == 2, (
+        f"expected 2 launcher invocations (primary + auto-sync), got {len(fake_launcher.calls)}"
+    )
+    primary_prompt = fake_launcher.calls[0]["prompt"]
+    auto_sync_prompt = fake_launcher.calls[1]["prompt"]
+    assert primary_prompt == "do work"
+    assert "auto-sync" in auto_sync_prompt.lower()
+    assert ".claude/settings.local.json" in auto_sync_prompt
+    assert ".claude/settings.json" in auto_sync_prompt
+
+
+def test_post_run_auto_sync_uses_base_branch_in_prompt(
+    repo_with_branches: Path, tmp_sessions_dir: Path
+) -> None:
+    """The auto-sync prompt must reference the session's base_branch."""
+    from support.launchers import ScriptedLauncher
+
+    fake = ScriptedLauncher()
+    fake.script(
+        [
+            [{"type": "session.status_idle", "stop_reason": "end_turn"}],
+            [{"type": "session.status_idle", "stop_reason": "end_turn"}],
+        ]
+    )
+    client = TestClient(create_app(launcher_factory=lambda name: fake))
+
+    payload = {
+        "agent": {"name": "t", "system": "s", "provider": "fake_scripted"},
+        "base_branch": "develop",
+        "resources": [
+            {
+                "type": "github_repository",
+                "url": f"file://{repo_with_branches}",
+                "mount_path": "/workspace/repo",
+            }
+        ],
+    }
+    session_id = client.post("/v1/sessions", json=payload).json()["session_id"]
+    client.post(
+        f"/v1/sessions/{session_id}/events",
+        json={"events": [{"type": "user.message", "content": "go"}]},
+    )
+
+    deadline = time.monotonic() + 2.0
+    while len(fake.calls) < 2 and time.monotonic() < deadline:
+        time.sleep(0.05)
+
+    assert len(fake.calls) == 2
+    auto_sync_prompt = fake.calls[1]["prompt"]
+    assert "develop" in auto_sync_prompt
+    assert f"mad/{session_id}" in auto_sync_prompt
+
+
+def test_post_run_auto_sync_runs_even_when_primary_fails(
+    client: TestClient, fake_launcher, session_payload: dict
+) -> None:
+    """Auto-sync MUST fire even after the primary run reports session.error."""
+    fake_launcher.script(
+        [
+            [{"type": "session.error", "error": "boom"}],
+            [{"type": "session.status_idle", "stop_reason": "end_turn"}],
+        ]
+    )
+    session_id = client.post("/v1/sessions", json=session_payload).json()["session_id"]
+    client.post(
+        f"/v1/sessions/{session_id}/events",
+        json={"events": [{"type": "user.message", "content": "go"}]},
+    )
+    with client.stream("GET", f"/v1/sessions/{session_id}/stream") as resp:
+        for _ in resp.iter_lines():
+            pass
+
+    assert len(fake_launcher.calls) == 2
+
+    log_path = Path("sessions") / f"{session_id}.jsonl"
+    lines = [json.loads(ln) for ln in log_path.read_text().splitlines() if ln.strip()]
+    types = [e["type"] for e in lines]
+    assert types.count("session.error") >= 1
+    # The auto-sync run completed successfully → the final state for this
+    # second run is session.status_idle.
+    assert "session.status_idle" in types

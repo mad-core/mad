@@ -13,6 +13,7 @@ from typing import Any, Callable, Coroutine
 from mad.core.domain.entities.session import Session
 from mad.core.domain.exceptions.base import SessionNotFound
 from mad.core.ports.outbound.session_repository import SessionRepository
+from mad.core.use_cases.sessions.auto_sync_prompt import build_auto_sync_prompt
 
 
 @dataclass
@@ -91,6 +92,26 @@ async def _run_launcher(
         if session.status == "running":
             _emit_and_push(repo, session, session_id, sse_queues, "session.error", {"error": str(exc)})
             session.mark_error()
+
+    # Post-run auto-sync (issue #8): always launch a second agent run in the
+    # same workspace with a fixed instruction prompt that decides whether to
+    # branch / commit / push / open a PR. Mad does not interpret the run's
+    # output (hard rule 1); events are emitted as agent.output like any other
+    # run. Failures here MUST NOT crash the session task — they are surfaced
+    # as a session.error event.
+    try:
+        auto_sync_prompt = build_auto_sync_prompt(session_id, session.base_branch)
+        await launcher.run(prompt=auto_sync_prompt, workspace=workspace, emit=emit)
+    except Exception as exc:
+        _emit_and_push(
+            repo,
+            session,
+            session_id,
+            sse_queues,
+            "session.error",
+            {"error": f"auto-sync failed: {exc}"},
+        )
+        session.mark_error()
     finally:
         q = sse_queues.get(session_id)
         if q is not None:

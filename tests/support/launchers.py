@@ -20,6 +20,7 @@ class ScriptedLauncher:
 
     def __init__(self) -> None:
         self._queue: deque[list[dict]] = deque()
+        self.calls: list[dict[str, Any]] = []
 
     def script(self, runs: list[list[dict]]) -> None:
         self._queue = deque(runs)
@@ -30,6 +31,7 @@ class ScriptedLauncher:
         workspace: Path,
         emit: Callable[[str, dict | None], Coroutine[Any, Any, None]],
     ) -> None:
+        self.calls.append({"prompt": prompt, "workspace": workspace})
         if self._queue:
             events = self._queue.popleft()
         else:

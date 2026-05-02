@@ -67,3 +67,17 @@ def test_from_dict_round_trip():
     assert s2.session_id == s.session_id
     assert s2.status == "idle"
     assert s2.workspace == s.workspace
+
+
+def test_base_branch_persisted_through_round_trip():
+    s = _make_session(base_branch="develop")
+    d = s.to_dict()
+    assert d["base_branch"] == "develop"
+    s2 = Session.from_dict(d)
+    assert s2.base_branch == "develop"
+
+
+def test_base_branch_defaults_to_none():
+    s = _make_session()
+    assert s.base_branch is None
+    assert s.to_dict()["base_branch"] is None

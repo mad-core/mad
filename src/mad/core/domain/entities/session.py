@@ -25,6 +25,9 @@ class Session:
     agent: dict[str, Any]
     workspace: str
     status: str = "created"
+    # Branch the workspace is pinned to at provisioning time. When None the
+    # provisioner leaves the clone on whatever HEAD git produced (remote default).
+    base_branch: str | None = None
     # Opaque dict of mounted resource descriptors for the HTTP response.
     resources_mounted: list[dict[str, Any]] = field(default_factory=list)
     # Cached HTTP response for idempotency
@@ -64,6 +67,7 @@ class Session:
             "agent": self.agent,
             "workspace": self.workspace,
             "status": self.status,
+            "base_branch": self.base_branch,
             "resources_mounted": self.resources_mounted,
             "response": self.response,
         }
@@ -76,6 +80,7 @@ class Session:
             agent=d.get("agent", {}),
             workspace=d.get("workspace", ""),
             status=d.get("status", "created"),
+            base_branch=d.get("base_branch"),
             resources_mounted=d.get("resources_mounted", []),
             response=d.get("response", {}),
         )

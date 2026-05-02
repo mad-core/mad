@@ -35,6 +35,7 @@ class CreateSessionInput:
     agent: dict[str, Any]
     resources: list[ResourceSpec] = field(default_factory=list)
     idempotency_key: str | None = None
+    base_branch: str | None = None
 
 
 @dataclass
@@ -85,6 +86,7 @@ class CreateSessionUseCase:
                     mount_path=res.mount_path,
                     repo_url=res.url,
                     token=res.authorization_token,
+                    base_branch=payload.base_branch,
                 )
                 resources_mounted.append({
                     "type": "github_repository",
@@ -127,6 +129,7 @@ class CreateSessionUseCase:
             agent=payload.agent,
             workspace=str(workspace),
             status="created",
+            base_branch=payload.base_branch,
             resources_mounted=resources_mounted,
             response=response,
             tokens_to_redact=tokens_to_redact,

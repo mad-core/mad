@@ -85,16 +85,126 @@ async def test_send_message_runs_launcher_and_redacts_tokens():
             break
 
     types = [e["type"] for e in repo.events]
+    # Primary run + post-run auto-sync run (issue #8): the launcher is invoked
+    # twice, so two status_idle events are emitted.
     assert types == [
         "user.message",
         "session.status_running",
         "agent.output",
         "session.status_idle",
+        "agent.output",
+        "session.status_idle",
     ]
     assert sessions["sesn_msg"].status == "idle"
-    output_event = next(e for e in repo.events if e["type"] == "agent.output")
-    assert token not in output_event["line"]
-    assert "[REDACTED]" in output_event["line"]
+    output_events = [e for e in repo.events if e["type"] == "agent.output"]
+    for output_event in output_events:
+        assert token not in output_event["line"]
+        assert "[REDACTED]" in output_event["line"]
+
+
+async def test_post_run_auto_sync_invokes_second_launcher_run():
+    """After the primary run, send_user_message must invoke the launcher a
+    second time with the auto-sync instruction prompt (issue #8).
+    """
+    repo = FakeRepo()
+    sessions = {"sesn_msg": _make_session()}
+    sessions["sesn_msg"].base_branch = "develop"
+    sse_queue: asyncio.Queue = asyncio.Queue()
+    sse_queues = {"sesn_msg": sse_queue}
+
+    calls: list[str] = []
+
+    class RecordingLauncher:
+        async def run(self, prompt, workspace, emit):
+            calls.append(prompt)
+            await emit("session.status_idle", {"stop_reason": "end_turn"})
+
+    uc = SendUserMessageUseCase(
+        repo=repo,
+        sessions_index=sessions,
+        sse_queues=sse_queues,
+        get_launcher=lambda name: RecordingLauncher(),
+    )
+
+    uc.execute(SendUserMessageInput(session_id="sesn_msg", content="hello"))
+    while True:
+        event = await asyncio.wait_for(sse_queue.get(), timeout=1.0)
+        if event is None:
+            break
+
+    assert len(calls) == 2
+    assert calls[0] == "hello"
+    assert "auto-sync" in calls[1].lower()
+    assert "develop" in calls[1]
+    assert ".claude/settings.local.json" in calls[1]
+    assert ".claude/settings.json" in calls[1]
+
+
+async def test_post_run_auto_sync_runs_even_when_primary_fails():
+    """Auto-sync must run even when the primary launcher raises (issue #8)."""
+    repo = FakeRepo()
+    sessions = {"sesn_msg": _make_session()}
+    sse_queue: asyncio.Queue = asyncio.Queue()
+    sse_queues = {"sesn_msg": sse_queue}
+
+    calls: list[str] = []
+
+    class FlakyLauncher:
+        async def run(self, prompt, workspace, emit):
+            calls.append(prompt)
+            if len(calls) == 1:
+                raise RuntimeError("primary boom")
+            await emit("session.status_idle", {"stop_reason": "end_turn"})
+
+    uc = SendUserMessageUseCase(
+        repo=repo,
+        sessions_index=sessions,
+        sse_queues=sse_queues,
+        get_launcher=lambda name: FlakyLauncher(),
+    )
+
+    uc.execute(SendUserMessageInput(session_id="sesn_msg", content="hi"))
+    while True:
+        event = await asyncio.wait_for(sse_queue.get(), timeout=1.0)
+        if event is None:
+            break
+
+    assert len(calls) == 2, "second (auto-sync) run must fire even after primary failure"
+
+
+async def test_post_run_auto_sync_failure_emits_session_error():
+    """If the auto-sync run itself raises, surface it as session.error (issue #8)."""
+    repo = FakeRepo()
+    sessions = {"sesn_msg": _make_session()}
+    sse_queue: asyncio.Queue = asyncio.Queue()
+    sse_queues = {"sesn_msg": sse_queue}
+
+    calls: list[int] = []
+
+    class AutoSyncBoom:
+        async def run(self, prompt, workspace, emit):
+            calls.append(1)
+            if len(calls) == 1:
+                await emit("session.status_idle", {"stop_reason": "end_turn"})
+                return
+            raise RuntimeError("sync boom")
+
+    uc = SendUserMessageUseCase(
+        repo=repo,
+        sessions_index=sessions,
+        sse_queues=sse_queues,
+        get_launcher=lambda name: AutoSyncBoom(),
+    )
+
+    uc.execute(SendUserMessageInput(session_id="sesn_msg", content="hi"))
+    while True:
+        event = await asyncio.wait_for(sse_queue.get(), timeout=1.0)
+        if event is None:
+            break
+
+    error_events = [e for e in repo.events if e["type"] == "session.error"]
+    assert any("auto-sync failed" in e.get("error", "") for e in error_events)
+    assert sessions["sesn_msg"].status == "error"
 
 
 async def test_send_message_records_session_error_when_launcher_raises():

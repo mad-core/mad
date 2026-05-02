@@ -55,6 +55,7 @@ async def create_session(
     body = await request.json()
     agent = body["agent"]
     raw_resources = body.get("resources", [])
+    base_branch = body.get("base_branch")
 
     resource_specs = [
         ResourceSpec(
@@ -80,6 +81,7 @@ async def create_session(
             agent=agent,
             resources=resource_specs,
             idempotency_key=idempotency_key,
+            base_branch=base_branch,
         )
     )
 

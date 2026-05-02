@@ -56,9 +56,14 @@ class FakeProvisioner:
         self.destroyed.append(session_id)
 
     def materialize_github_repo(
-        self, workspace: Path, mount_path: str, repo_url: str, token: str | None
+        self,
+        workspace: Path,
+        mount_path: str,
+        repo_url: str,
+        token: str | None,
+        base_branch: str | None = None,
     ) -> None:
-        self.repos_cloned.append((mount_path, repo_url))
+        self.repos_cloned.append((mount_path, repo_url, base_branch))
 
     def materialize_file(self, workspace: Path, mount_path: str, content: str) -> None:
         self.files_written.append((mount_path, content))
@@ -167,8 +172,46 @@ def test_github_repo_resource_is_materialized(use_case, provisioner):
     )
     uc.execute(payload)
     assert len(provisioner.repos_cloned) == 1
-    mp, url = provisioner.repos_cloned[0]
+    mp, url, _ = provisioner.repos_cloned[0]
     assert mp == "/workspace/repo"
+
+
+def test_base_branch_propagates_to_provisioner_and_session(use_case, provisioner):
+    """CreateSession must forward base_branch to the provisioner and persist
+    it on the resulting Session entity (issue #8)."""
+    uc, sessions, _ = use_case
+    payload = CreateSessionInput(
+        agent={"name": "a", "provider": "fake"},
+        resources=[
+            ResourceSpec(
+                type="github_repository",
+                mount_path="/workspace/repo",
+                url="https://github.com/test/repo",
+            )
+        ],
+        base_branch="develop",
+    )
+    output = uc.execute(payload)
+    assert provisioner.repos_cloned[0][2] == "develop"
+    assert output.session.base_branch == "develop"
+    assert sessions[output.session.session_id].base_branch == "develop"
+
+
+def test_base_branch_defaults_to_none_when_omitted(use_case, provisioner):
+    uc, _, _ = use_case
+    payload = CreateSessionInput(
+        agent={"name": "a", "provider": "fake"},
+        resources=[
+            ResourceSpec(
+                type="github_repository",
+                mount_path="/workspace/repo",
+                url="https://github.com/test/repo",
+            )
+        ],
+    )
+    output = uc.execute(payload)
+    assert provisioner.repos_cloned[0][2] is None
+    assert output.session.base_branch is None
 
 
 def test_tokens_stored_in_session_for_redaction(use_case):
