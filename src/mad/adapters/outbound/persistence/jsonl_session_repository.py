@@ -5,6 +5,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from mad.core.events.domain.event_id import new_event_id
+
 SESSIONS_DIR = Path("sessions")
 
 # ---------------------------------------------------------------------------
@@ -23,9 +25,15 @@ def log_path(session_id: str) -> Path:
 def emit(session_id: str, event_type: str, data: dict[str, Any] | None = None) -> dict:
     """Print an event to stdout AND append it to the session JSONL log.
 
-    The log is the source of truth (CLAUDE.md hard rule 6).
+    The log is the source of truth (CLAUDE.md hard rule 6). Each event
+    carries a UUIDv7 ``event_id`` so cross-session ordering and SSE
+    ``Last-Event-ID`` catch-up work without a parallel store (ADR-0005).
     """
-    event = {"type": event_type, "timestamp": datetime.now(UTC).isoformat()}
+    event = {
+        "event_id": str(new_event_id()),
+        "type": event_type,
+        "timestamp": datetime.now(UTC).isoformat(),
+    }
     if data:
         event.update(data)
     line = json.dumps(event)
