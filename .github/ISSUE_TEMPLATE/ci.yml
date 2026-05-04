@@ -1,0 +1,43 @@
+name: CI / Tooling
+description: Pipeline, build system, or developer tooling change.
+labels: ["type: ci", "status: needs-triage"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What needs to change
+      description: Describe the CI/CD, build, or tooling change needed.
+    validations:
+      required: true
+
+  - type: textarea
+    id: current
+    attributes:
+      label: Current behavior
+      description: What does the pipeline/tooling do now?
+    validations:
+      required: true
+
+  - type: textarea
+    id: desired
+    attributes:
+      label: Desired behavior
+      description: What should it do after this change?
+    validations:
+      required: true
+
+  - type: textarea
+    id: affected
+    attributes:
+      label: Affected pipelines / tooling
+      description: List the workflows, Makefile targets, scripts, or tools affected.
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Links to failing runs, related issues, external documentation.
+    validations:
+      required: false

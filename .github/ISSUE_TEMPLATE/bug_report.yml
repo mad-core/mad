@@ -1,0 +1,67 @@
+name: Bug Report
+description: Something is not working correctly.
+labels: ["type: bug", "status: needs-triage"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What is broken? Be specific about the component and the observable failure.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: textarea
+    id: current
+    attributes:
+      label: Current behavior
+      description: What actually happens.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should happen instead.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Mad version / commit
+    validations:
+      required: false
+
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+    validations:
+      required: false
+
+  - type: input
+    id: os
+    attributes:
+      label: OS
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Logs, stack traces, screenshots, links to related issues.
+    validations:
+      required: false

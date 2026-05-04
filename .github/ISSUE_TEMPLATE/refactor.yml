@@ -1,0 +1,46 @@
+name: Refactor
+description: Internal restructuring with no observable behavior change.
+labels: ["type: refactor", "status: needs-triage"]
+body:
+  - type: textarea
+    id: current
+    attributes:
+      label: Current state
+      description: What is the code doing now? What makes it hard to work with, extend, or test?
+    validations:
+      required: true
+
+  - type: textarea
+    id: target
+    attributes:
+      label: Target state
+      description: What should it look like after the refactor? Name the pattern, structure, or invariant being introduced.
+    validations:
+      required: true
+
+  - type: textarea
+    id: contracts
+    attributes:
+      label: Impact on public contracts
+      description: Does this change any Protocol interface, HTTP API shape, or test fixture? List each affected surface. If none, write "None — purely internal restructuring."
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      value: |
+        - [ ] All existing tests pass without modification (or test changes are justified)
+        - [ ]
+        - [ ]
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Links to related issues, architecture docs, prior discussion.
+    validations:
+      required: false

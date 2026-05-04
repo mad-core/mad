@@ -1,76 +1,29 @@
 from __future__ import annotations
 
 import subprocess
-from collections import deque
 from pathlib import Path
-from typing import Callable, Awaitable
 
 import pytest
 from fastapi.testclient import TestClient
 
-from mad.api.app import create_app
-from mad.providers import factory
-
-
-# ---------------------------------------------------------------------------
-# FakeLauncher — test double for the new AgentLauncher protocol
-# ---------------------------------------------------------------------------
-
-class FakeLauncher:
-    """Test double for AgentLauncher.
-
-    Script a sequence of runs via .script(runs). Each element of `runs` is a
-    list of event dicts that will be emitted (in order) for one call to run().
-
-    If the scripted queue is exhausted, a default session.status_idle event is
-    emitted so tests that don't care about the response still terminate cleanly.
-    """
-
-    def __init__(self) -> None:
-        self._queue: deque[list[dict]] = deque()
-
-    def script(self, runs: list[list[dict]]) -> None:
-        """Pre-load the sequence of event-lists for upcoming run() calls."""
-        self._queue = deque(runs)
-
-    async def run(
-        self,
-        prompt: str,
-        workspace: Path,
-        emit: Callable[[str, dict], Awaitable[None]],
-    ) -> None:
-        """Emit the next scripted run's events, or a default idle event."""
-        if self._queue:
-            events = self._queue.popleft()
-        else:
-            events = [{"type": "session.status_idle", "stop_reason": "end_turn"}]
-
-        for event in events:
-            await emit(event["type"], event)
-
+import mad.adapters.outbound.persistence.jsonl_session_repository as _adapter_log
+from mad.adapters.inbound.http import create_app
+from support.launchers import ScriptedLauncher
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
 
-@pytest.fixture
-def fake_launcher(monkeypatch: pytest.MonkeyPatch) -> FakeLauncher:
-    """Return a FakeLauncher and monkeypatch get_launcher to return it."""
-    launcher = FakeLauncher()
-    monkeypatch.setattr(factory, "get_launcher", lambda name: launcher)
-    return launcher
 
-
-# Keep fake_provider as an alias so any remaining references don't break
-# immediately — but new tests MUST use fake_launcher.
 @pytest.fixture
-def fake_provider(fake_launcher: FakeLauncher) -> FakeLauncher:
-    return fake_launcher
+def fake_launcher() -> ScriptedLauncher:
+    """Return a ScriptedLauncher; injected into create_app via launcher_factory."""
+    return ScriptedLauncher()
 
 
 @pytest.fixture
-def client(fake_launcher: FakeLauncher) -> TestClient:
-    return TestClient(create_app())
+def client(fake_launcher: ScriptedLauncher) -> TestClient:
+    return TestClient(create_app(launcher_factory=lambda name: fake_launcher))
 
 
 @pytest.fixture
@@ -89,8 +42,19 @@ def bare_repo(tmp_path: Path) -> Path:
     (seed / "README.md").write_text("seed repo\n")
     subprocess.run(["git", "-C", str(seed), "add", "README.md"], check=True)
     subprocess.run(
-        ["git", "-C", str(seed), "-c", "user.email=t@t", "-c", "user.name=t",
-         "commit", "-q", "-m", "init"],
+        [
+            "git",
+            "-C",
+            str(seed),
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "user.name=t",
+            "commit",
+            "-q",
+            "-m",
+            "init",
+        ],
         check=True,
     )
     bare = tmp_path / "origin.git"
@@ -120,3 +84,16 @@ def _session_payload(bare_repo: Path) -> dict:
 @pytest.fixture
 def session_payload(bare_repo: Path) -> dict:
     return _session_payload(bare_repo)
+
+
+@pytest.fixture
+def tmp_sessions_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Monkeypatch SESSIONS_DIR to a tmp_path subdirectory.
+
+    Patches the adapter module (canonical location) so all persistence code
+    writes to the tmp directory instead of the CWD-relative 'sessions/' dir.
+    """
+    sessions = tmp_path / "sessions"
+    sessions.mkdir()
+    monkeypatch.setattr(_adapter_log, "SESSIONS_DIR", sessions)
+    return sessions

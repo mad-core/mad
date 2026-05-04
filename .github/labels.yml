@@ -1,0 +1,50 @@
+# Sync with: gh label create / gh label edit
+# Apply to repo: gh label create --force (from a script iterating this file)
+
+- name: "type: bug"
+  color: "d73a4a"
+  description: "Something is not working correctly"
+
+- name: "type: feat"
+  color: "0075ca"
+  description: "New capability or behavior"
+
+- name: "type: refactor"
+  color: "7057ff"
+  description: "Internal restructuring, no behavior change"
+
+- name: "type: ci"
+  color: "e4e669"
+  description: "Pipeline, build system, or developer tooling"
+
+- name: "type: chore"
+  color: "cfd3d7"
+  description: "Dependency update, maintenance, cleanup"
+
+- name: "type: docs"
+  color: "0e8a16"
+  description: "Documentation only"
+
+- name: "status: needs-triage"
+  color: "fbca04"
+  description: "Newly created, not yet reviewed or assigned"
+
+- name: "status: blocked"
+  color: "e99695"
+  description: "Cannot proceed until a blocking issue is resolved"
+
+- name: "status: in-progress"
+  color: "0052cc"
+  description: "Actively being worked on"
+
+- name: "priority: high"
+  color: "b60205"
+  description: "Must be resolved urgently"
+
+- name: "priority: medium"
+  color: "e4a13a"
+  description: "Important but not urgent"
+
+- name: "priority: low"
+  color: "c5def5"
+  description: "Nice to have, no deadline"

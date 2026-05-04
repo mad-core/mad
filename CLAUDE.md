@@ -4,22 +4,7 @@ Project conventions and hard rules for anyone (human or Claude) working in this 
 
 ## What this project is
 
-**Mad** (Multi Agent Develop) is a self-hosted infrastructure layer that provisions isolated workspaces, clones GitHub repositories, and launches external autonomous agents (Claude Code, OpenCode, Codex, etc.) against them. Mad streams each agent's stdout as `agent.output` events and reports when the agent finishes. Mad does NOT manage agent loops, execute tools, or parse LLM responses — external agents bring their own harnesses. Full spec in [`specs/infra/`](specs/infra/README.md).
-
-## Development workflow
-
-Mad follows **spec-first + TDD-light**. To add any new feature:
-
-```
-1. /new-spec <name>        → spec-author creates specs/<name>/
-2. Review/edit the spec manually
-3. /implement specs/<name> → test-author writes failing tests
-                           → implementer writes code until green
-                           → spec-reviewer closes with a report
-4. Commit + push           → GitHub Actions runs pytest
-```
-
-The 4 subagents live in `.claude/agents/`. The 3 slash commands live in `.claude/commands/`.
+**Mad** (Multi Agent Develop) is a self-hosted infrastructure layer that provisions isolated workspaces, clones GitHub repositories, and launches external autonomous agents (Claude Code, OpenCode, Codex, etc.) against them. Mad streams each agent's stdout as `agent.output` events and reports when the agent finishes. Mad does NOT manage agent loops, execute tools, or parse LLM responses — external agents bring their own harnesses.
 
 ## Hard rules — never break these
 
@@ -29,35 +14,22 @@ The 4 subagents live in `.claude/agents/`. The 3 slash commands live in `.claude
 
 3. **Path traversal prevention.** `mount_path` values from requests are mapped to subdirectories of the session workspace. Absolute paths that would escape the workspace MUST be rejected before any filesystem operation.
 
-4. **Package layout.** Core logic lives in the `mad` package under `src/mad/`, split by concern:
-   - `mad.api` — FastAPI app + routers. Thin HTTP layer only: parse, validate, delegate. Exposes `create_app(store=...)` as a factory.
-   - `mad.core` — pure domain. Session registry, JSONL session log (hard rule 6), workspace management, path validation (hard rule 3), token hygiene (hard rule 2). No FastAPI imports here.
-   - `mad.agent` — vestigial; being phased out.
-   - `mad.providers` — `AgentLauncher` Protocol, `get_launcher` factory, and one module per implementation (`claude_cli`, `anthropic_api` stub, `fake`).
+4. **`mad.core` is framework-free and adapter-free.** No FastAPI, no `subprocess`, no `mad.adapters` imports — enforced by `import-linter`. Hexagonal/ports-and-adapters layout details and conventions live in [ADR-0003](docs/adr/0003-package-layout.md).
 
-   No module-level mutable globals. Session registries, SSE queues, and idempotency maps live on a `SessionStore` injected into `create_app()` so every test builds its own isolated instance. The project MUST remain `pip install -e .` compatible at all times — `pyproject.toml` owns package metadata, dependencies, and the `mad` console script.
-
-5. **Fake launcher in tests.** Tests NEVER hit the real `claude` CLI or GitHub. They use `FakeLauncher` (from `mad.providers.fake`) with scripted event sequences and local bare repos. CI has no secrets.
+5. **Tests never hit the real `claude` CLI or GitHub.** CI has no secrets and never will. How tests script launcher behavior is a testing-architecture decision, not a hard rule — current convention (`tests/support/launchers.py::ScriptedLauncher`) is documented in [ADR-0003](docs/adr/0003-package-layout.md).
 
 6. **Source of truth is the session log.** Every action is both printed to stdout AND appended to the session log JSONL. The log is authoritative; if the process crashes, a new harness reads the log and resumes.
 
-## Commit policy
+7. **AskUserQuestion for all user input.** Claude NEVER asks questions as plain text in a response turn. Whenever Claude needs a decision, confirmation, classification, or any input from the user — issue type, plan approval, branch selection, draft review — it MUST use the `AskUserQuestion` tool. Plain text in a response is for informing only, never for soliciting decisions. This rule applies to every skill, command, and workflow in this repo without exception.
 
-Claude commits automatically whenever a version is "apparently stable". This is a standing instruction — no per-commit approval needed.
+## Commits and PRs
 
-A state is **apparently stable** when:
-- `pytest -q` exits 0 (all tests green).
-- `spec-reviewer` reports no ❌ on FR coverage, no hard-rule violations, and no critical risks.
+| Command | Purpose |
+|---|---|
+| `/commit` | Stage and commit changes following Conventional Commits + semantic-release rules. |
+| `/pr [issue-number]` | Open a pull request for the current branch. Referenced by `/work` at the end of the execution pipeline. |
 
-When both hold, commit right away:
-- Use Conventional Commits: `feat(<spec>): ...`, `fix(<spec>): ...`, `chore: ...`, `docs: ...`.
-- Stage only the files touched in the current loop. Never `git add -A` or `git add .` — protects against accidentally committing secrets or junk.
-- Always add the trailer `Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>`.
-- Never push. Pushing is always the user's explicit call.
-- Never amend. If a commit is wrong, create a follow-up commit.
-- Never use `--no-verify`.
-
-If the state is NOT stable, do not commit. Report what blocks stability and leave the working tree as-is.
+Claude does NOT commit or open PRs automatically — only when explicitly invoked.
 
 ## Commands
 
@@ -66,23 +38,53 @@ All day-to-day commands are wrapped in the `Makefile` — run `make help` for th
 ```bash
 make install   # create venv + `pip install -e '.[dev]'`
 make test      # pytest -q
-make serve     # uvicorn mad.api.app:create_app --factory (HOST=/PORT= override)
+make serve     # uvicorn mad.adapters.inbound.http.app:create_app --factory (HOST=/PORT= override)
 make clean     # drop caches, build artifacts, sessions/
 ```
 
 The `mad` console script (`mad serve`) is also available once the package is installed.
 
+## Skills
+
+Project-level skills live in `.claude/skills/`. Invoke with `/skill-name` or via the `Skill` tool.
+
+| Skill | Path | Purpose |
+|---|---|---|
+| `intake` | `.claude/skills/intake/SKILL.md` | Full issue intake pipeline: classify → search → refine → create. Embeds issue templates in `resources/templates/`. |
+| `work` | `.claude/skills/work/SKILL.md` | Full issue execution pipeline: read → branch → work → commit → PR. |
+
+Agents (spawned as subagents by the skills above):
+
+| Agent | Path | Purpose |
+|---|---|---|
+| `search-issues` | `.claude/agents/search-issues.md` | Read-only GitHub issue search: duplicates, related, blockers. Spawned by `/intake`. |
+
+**Template sync rule.** `.claude/skills/intake/resources/templates/<type>.md` and `.github/ISSUE_TEMPLATE/<type>.yml` are mirrors. Changing one requires updating the other. The `resources/templates/` files are the canonical source; `.github/ISSUE_TEMPLATE/` files expose them in the GitHub web UI.
+
+## Architecture decisions
+
+Load-bearing decisions are recorded as ADRs in `docs/adr/` — see `docs/adr/README.md` for the index. Read these before making structural changes; if you disagree with one, supersede it with a new ADR rather than diverging silently. Currently:
+
+- [ADR-0001](docs/adr/0001-testing-strategy.md) — testing heuristic and coverage thresholds.
+- [ADR-0002](docs/adr/0002-quality-tooling-bundle.md) — ruff, mypy, import-linter, pre-commit, gitleaks, pip-audit, CI layout.
+- [ADR-0003](docs/adr/0003-package-layout.md) — hexagonal package layout; test doubles live under `tests/support/`, not `src/`.
+
 ## Key files
 
-- `specs/infra/` — spec-driven package for the current milestone.
+- `docs/adr/` — Architecture Decision Records; the *why* behind structural choices.
 - `docs/backlog.md` — improvements deferred past v0.1.
 - `docs/sandbox-bwrap.md` — operator's guide for hardening the sandbox with bubblewrap.
 - `pyproject.toml` — package metadata, dependencies, build backend, and the `mad` console script. Single source of truth for `pip install -e .`.
-- `src/mad/api/app.py` — `create_app(store=...)` factory and router wiring.
-- `src/mad/core/` — session log, workspace, security primitives (hard rules 2, 3, 6 enforced here).
-- `src/mad/agent/` — vestigial (empty module, being phased out).
-- `src/mad/providers/` — `AgentLauncher` protocol, `get_launcher` factory, and implementations (`claude_cli`, `anthropic_api` stub, `fake`).
-- `tests/conftest.py` — shared fixtures, including `fake_launcher` (built on `FakeLauncher` from `mad.providers.fake`) and `bare_repo`. Unit tests live under `tests/unit/`, FR acceptance tests under `tests/test_acceptance.py`.
+- `src/mad/adapters/inbound/http/app.py` — `create_app(store=..., session_repo=..., workspace_provisioner=..., launcher_factory=...)` factory and router wiring.
+- `src/mad/adapters/inbound/http/dependencies.py` — composition root; builds production defaults for all outbound dependencies.
+- `src/mad/core/domain/` — pure entities, value objects, domain exceptions (no I/O, no framework imports).
+- `src/mad/core/ports/outbound/` — `SessionRepository`, `WorkspaceProvisioner`, `AgentLauncher` Protocol interfaces.
+- `src/mad/core/use_cases/sessions/` — application logic: create, send message, get, list, delete, stream events.
+- `src/mad/adapters/outbound/persistence/` — `JsonlSessionRepository` (JSONL file log, hard rule 6) and `LocalWorkspaceProvisioner`.
+- `src/mad/adapters/outbound/agents/` — production `AgentLauncher` implementations (`claude_cli`) and the by-name `factory.get_launcher` extension point.
+- `src/mad/entry_points/cli.py` — uvicorn launcher, `mad` console script entry point.
+- `tests/support/` — test-only doubles (e.g. `ScriptedLauncher`). Never imported from `src/`.
+- `tests/conftest.py` — shared fixtures, including `fake_launcher` (a `ScriptedLauncher`) and `bare_repo`. Unit tests live under `tests/unit/`, integration tests under `tests/integration/`.
 
 ## AgentLauncher contract
 
@@ -98,9 +100,7 @@ class AgentLauncher(Protocol):
     ) -> None: ...
 ```
 
-The launcher receives the prompt, the workspace path, and an `emit` callback. It spawns the external agent, streams stdout line-by-line as `agent.output` events, and emits `session.status_idle` (exit 0) or `session.error` (non-zero / timeout) on completion. Current implementations:
+The launcher receives the prompt, the workspace path, and an `emit` callback. It spawns the external agent, streams stdout line-by-line as `agent.output` events, and emits `session.status_idle` (exit 0) or `session.error` (non-zero / timeout) on completion. Current production implementation:
 - `claude_cli` — spawns `claude --dangerously-skip-permissions -p "{prompt}"` with `cwd=workspace`. Configurable via `MAD_CLAUDE_CLI_BIN` and `MAD_CLAUDE_CLI_TIMEOUT_S`.
-- `anthropic_api` — stub (`NotImplementedError`); reserved for future direct-API integration.
-- `fake` — `FakeLauncher` test double that emits a pre-scripted sequence of events without spawning any process.
 
-The protocol lives in `mad.providers.base`. The factory `mad.providers.factory.get_launcher(agent.provider)` dispatches by name and is monkey-patched to `FakeLauncher` (from `mad.providers.fake`) in tests.
+The protocol lives in `mad.core.ports.outbound.agent_launcher`. The factory `mad.adapters.outbound.agents.factory.get_launcher(provider_name)` dispatches by name and is the extension point for additional providers. Tests inject a `ScriptedLauncher` (from `tests/support/launchers.py`) directly via `create_app(launcher_factory=...)` — no monkey-patching of production modules.
