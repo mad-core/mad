@@ -102,6 +102,7 @@ async def send_events(session_id: str, request: Request) -> dict:
         sessions_index=store.sessions,
         sse_queues=store.sse_queues,
         get_launcher=request.app.state.launcher_factory,
+        event_bus=request.app.state.event_bus,
     )
 
     for event in events:

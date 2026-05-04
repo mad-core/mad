@@ -17,6 +17,7 @@ from mad.core.use_cases.sessions.send_user_message import (
     SendUserMessageUseCase,
     _redact_tokens,
 )
+from support.events import FakeEventBus
 
 
 class FakeRepo:
@@ -51,6 +52,7 @@ def test_send_message_session_not_found():
         sessions_index=sessions,
         sse_queues={},
         get_launcher=lambda name: None,
+        event_bus=FakeEventBus(),
     )
     with pytest.raises(SessionNotFound):
         uc.execute(SendUserMessageInput(session_id="sesn_missing", content="hi"))
@@ -76,6 +78,7 @@ async def test_send_message_runs_launcher_and_redacts_tokens():
         sessions_index=sessions,
         sse_queues=sse_queues,
         get_launcher=lambda name: ScriptedLauncher(),
+        event_bus=FakeEventBus(),
     )
 
     uc.execute(SendUserMessageInput(session_id="sesn_msg", content="hello"))
@@ -124,6 +127,7 @@ async def test_post_run_auto_sync_invokes_second_launcher_run():
         sessions_index=sessions,
         sse_queues=sse_queues,
         get_launcher=lambda name: RecordingLauncher(),
+        event_bus=FakeEventBus(),
     )
 
     uc.execute(SendUserMessageInput(session_id="sesn_msg", content="hello"))
@@ -161,6 +165,7 @@ async def test_post_run_auto_sync_runs_even_when_primary_fails():
         sessions_index=sessions,
         sse_queues=sse_queues,
         get_launcher=lambda name: FlakyLauncher(),
+        event_bus=FakeEventBus(),
     )
 
     uc.execute(SendUserMessageInput(session_id="sesn_msg", content="hi"))
@@ -194,6 +199,7 @@ async def test_post_run_auto_sync_failure_emits_session_error():
         sessions_index=sessions,
         sse_queues=sse_queues,
         get_launcher=lambda name: AutoSyncBoom(),
+        event_bus=FakeEventBus(),
     )
 
     uc.execute(SendUserMessageInput(session_id="sesn_msg", content="hi"))
@@ -222,6 +228,7 @@ async def test_send_message_records_session_error_when_launcher_raises():
         sessions_index=sessions,
         sse_queues=sse_queues,
         get_launcher=lambda name: BoomLauncher(),
+        event_bus=FakeEventBus(),
     )
 
     uc.execute(SendUserMessageInput(session_id="sesn_msg", content="hi"))
@@ -233,6 +240,46 @@ async def test_send_message_records_session_error_when_launcher_raises():
     types = [e["type"] for e in repo.events]
     assert "session.error" in types
     assert sessions["sesn_msg"].status == "error"
+
+
+async def test_publishes_every_appended_event_to_the_event_bus():
+    """Issue #10 acceptance: SendUserMessage publishes to the injected
+    EventBus for every event it appends to the repository — the
+    ``user.message`` it appends synchronously and every lifecycle event
+    emitted during the launcher run."""
+    repo = FakeRepo()
+    sessions = {"sesn_msg": _make_session()}
+    sse_queue: asyncio.Queue = asyncio.Queue()
+    sse_queues = {"sesn_msg": sse_queue}
+    bus = FakeEventBus()
+
+    class ScriptedLauncher:
+        async def run(self, prompt, workspace, emit):
+            await emit("agent.output", {"line": "hi"})
+            await emit("session.status_idle", {"stop_reason": "end_turn"})
+
+    uc = SendUserMessageUseCase(
+        repo=repo,
+        sessions_index=sessions,
+        sse_queues=sse_queues,
+        get_launcher=lambda name: ScriptedLauncher(),
+        event_bus=bus,
+    )
+
+    uc.execute(SendUserMessageInput(session_id="sesn_msg", content="please"))
+    while True:
+        event = await asyncio.wait_for(sse_queue.get(), timeout=1.0)
+        if event is None:
+            break
+
+    repo_types = [e["type"] for e in repo.events]
+    bus_types = [e.type for e in bus.published]
+    # Every event appended to the repo must also appear on the bus, in
+    # the same order. Auto-sync (issue #8) fires a second launcher run,
+    # so the launcher emits `agent.output` and `session.status_idle`
+    # twice in a row — both are persisted and published.
+    assert repo_types == bus_types
+    assert all(e.session_id == "sesn_msg" for e in bus.published)
 
 
 @pytest.mark.parametrize(

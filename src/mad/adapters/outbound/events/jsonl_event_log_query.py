@@ -15,15 +15,12 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
-from uuid import UUID
 
 from mad.adapters.outbound.persistence import jsonl_session_repository as _persistence
-from mad.core.events.domain.event import Event
+from mad.core.events.domain.event import Event, event_from_persisted
 from mad.core.events.ports.event_log_query import EventQuery
-
-_META_KEYS = frozenset({"event_id", "type", "timestamp"})
 
 
 class JsonlEventLogQuery:
@@ -61,26 +58,7 @@ class JsonlEventLogQuery:
                 line = raw_line.strip()
                 if not line:
                     continue
-                yield _to_event(json.loads(line), session_id)
-
-
-def _to_event(raw: dict, session_id: str) -> Event:
-    eid_str = raw.get("event_id")
-    eid = UUID(eid_str) if isinstance(eid_str, str) and eid_str else None
-    ts_str = raw.get("timestamp")
-    if isinstance(ts_str, str) and ts_str:
-        ts = datetime.fromisoformat(ts_str)
-    else:
-        ts = datetime.fromtimestamp(0, tz=UTC)
-    type_ = raw.get("type", "")
-    data = {k: v for k, v in raw.items() if k not in _META_KEYS}
-    return Event(
-        event_id=eid,
-        session_id=session_id,
-        type=type_,
-        data=data,
-        timestamp=ts,
-    )
+                yield event_from_persisted(json.loads(line), session_id)
 
 
 def _matches(event: Event, q: EventQuery) -> bool:

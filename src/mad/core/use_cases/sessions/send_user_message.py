@@ -1,17 +1,26 @@
 """SendUserMessage use case.
 
-Handles user.message events, launching the agent for each message.
-Implements token redaction in agent.output events (CLAUDE.md hard rule 2).
+Handles ``user.message`` events, launching the agent for each message.
+Implements token redaction in ``agent.output`` events (CLAUDE.md
+hard rule 2).
+
+Every event the use case appends to the repository is also published
+to the injected ``EventBus`` so the cross-session observability surface
+(issue #10) sees a live copy of every state change.
 """
+
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Coroutine
+from typing import Any
 
 from mad.core.domain.entities.session import Session
 from mad.core.domain.exceptions.base import SessionNotFound
+from mad.core.events.domain.event import event_from_persisted
+from mad.core.events.ports.event_bus import EventBus
 from mad.core.ports.outbound.session_repository import SessionRepository
 from mad.core.use_cases.sessions.auto_sync_prompt import build_auto_sync_prompt
 
@@ -23,11 +32,13 @@ class SendUserMessageInput:
 
 
 class SendUserMessageUseCase:
-    """Accept a user message and dispatch the agent launcher as a background task.
+    """Accept a user message and dispatch the agent launcher as a
+    background task.
 
-    Token redaction: collects all authorization_tokens from the session's
-    resources_mounted and replaces any occurrence in emitted event data with
-    [REDACTED] before persisting to the JSONL log.
+    Token redaction: collects all ``authorization_token`` values from
+    the session's ``resources_mounted`` and replaces any occurrence in
+    emitted event data with ``[REDACTED]`` before persisting to the
+    JSONL log.
     """
 
     def __init__(
@@ -36,18 +47,29 @@ class SendUserMessageUseCase:
         sessions_index: dict[str, Session],
         sse_queues: dict[str, asyncio.Queue[Any]],
         get_launcher: Callable[[str], Any],
+        event_bus: EventBus,
     ) -> None:
         self._repo = repo
         self._sessions = sessions_index
         self._sse_queues = sse_queues
         self._get_launcher = get_launcher
+        self._event_bus = event_bus
 
     def execute(self, payload: SendUserMessageInput) -> None:
         """Validate and schedule the agent run. Returns immediately."""
         if payload.session_id not in self._sessions:
             raise SessionNotFound(payload.session_id)
         session = self._sessions[payload.session_id]
-        self._repo.append_event(payload.session_id, "user.message", {"content": payload.content})
+        event_dict = self._repo.append_event(
+            payload.session_id, "user.message", {"content": payload.content}
+        )
+        # Fire-and-forget publish: execute() is sync but FastAPI's event
+        # loop is running, so create_task is safe.
+        asyncio.create_task(
+            self._event_bus.publish(
+                event_from_persisted(event_dict, payload.session_id)
+            )
+        )
         asyncio.create_task(
             _run_launcher(
                 repo=self._repo,
@@ -56,6 +78,7 @@ class SendUserMessageUseCase:
                 prompt=payload.content,
                 sse_queues=self._sse_queues,
                 get_launcher=self._get_launcher,
+                event_bus=self._event_bus,
             )
         )
 
@@ -67,20 +90,28 @@ async def _run_launcher(
     prompt: str,
     sse_queues: dict[str, asyncio.Queue[Any]],
     get_launcher: Callable[[str], Any],
+    event_bus: EventBus,
 ) -> None:
     """Internal coroutine: run the launcher and handle lifecycle events."""
-    _emit_and_push(repo, session, session_id, sse_queues, "session.status_running")
+    await _emit_and_push(
+        repo, session, session_id, sse_queues, event_bus, "session.status_running"
+    )
     session.mark_running()
 
-    # Collect tokens to redact from this session's resources
     tokens_to_redact = _collect_tokens(session)
 
     launcher = get_launcher(session.agent["provider"])
     workspace = Path(session.workspace)
 
     async def emit(event_type: str, data: dict[str, Any] | None = None) -> None:
-        redacted_data = _redact_tokens(data, tokens_to_redact) if data and tokens_to_redact else data
-        _emit_and_push(repo, session, session_id, sse_queues, event_type, redacted_data)
+        redacted_data = (
+            _redact_tokens(data, tokens_to_redact)
+            if data and tokens_to_redact
+            else data
+        )
+        await _emit_and_push(
+            repo, session, session_id, sse_queues, event_bus, event_type, redacted_data
+        )
         if event_type == "session.status_idle":
             session.mark_idle()
         elif event_type == "session.error":
@@ -90,24 +121,33 @@ async def _run_launcher(
         await launcher.run(prompt=prompt, workspace=workspace, emit=emit)
     except Exception as exc:
         if session.status == "running":
-            _emit_and_push(repo, session, session_id, sse_queues, "session.error", {"error": str(exc)})
+            await _emit_and_push(
+                repo,
+                session,
+                session_id,
+                sse_queues,
+                event_bus,
+                "session.error",
+                {"error": str(exc)},
+            )
             session.mark_error()
 
-    # Post-run auto-sync (issue #8): always launch a second agent run in the
-    # same workspace with a fixed instruction prompt that decides whether to
-    # branch / commit / push / open a PR. Mad does not interpret the run's
-    # output (hard rule 1); events are emitted as agent.output like any other
-    # run. Failures here MUST NOT crash the session task — they are surfaced
-    # as a session.error event.
+    # Post-run auto-sync (issue #8): always launch a second agent run in
+    # the same workspace with a fixed instruction prompt that decides
+    # whether to branch / commit / push / open a PR. Mad does not
+    # interpret the run's output (hard rule 1); events are emitted as
+    # agent.output like any other run. Failures here MUST NOT crash the
+    # session task — they are surfaced as a session.error event.
     try:
         auto_sync_prompt = build_auto_sync_prompt(session_id, session.base_branch)
         await launcher.run(prompt=auto_sync_prompt, workspace=workspace, emit=emit)
     except Exception as exc:
-        _emit_and_push(
+        await _emit_and_push(
             repo,
             session,
             session_id,
             sse_queues,
+            event_bus,
             "session.error",
             {"error": f"auto-sync failed: {exc}"},
         )
@@ -118,33 +158,35 @@ async def _run_launcher(
             await q.put(None)
 
 
-def _emit_and_push(
+async def _emit_and_push(
     repo: SessionRepository,
     session: Session,
     session_id: str,
     sse_queues: dict[str, asyncio.Queue[Any]],
+    event_bus: EventBus,
     event_type: str,
     data: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Append event to log and push to SSE queue."""
-    event = repo.append_event(session_id, event_type, data)
+    """Append event to log, push to SSE queue, and publish to the event bus."""
+    event_dict = repo.append_event(session_id, event_type, data)
     q = sse_queues.get(session_id)
     if q is not None:
-        q.put_nowait(event)
-    return event
+        q.put_nowait(event_dict)
+    await event_bus.publish(event_from_persisted(event_dict, session_id))
+    return event_dict
 
 
 def _collect_tokens(session: Session) -> list[str]:
     """Collect all authorization tokens from session (for redaction).
 
-    Tokens are stored in session.tokens_to_redact at creation time and
-    are NEVER persisted to the JSONL log.
+    Tokens are stored in ``session.tokens_to_redact`` at creation time
+    and are NEVER persisted to the JSONL log.
     """
     return [t for t in session.tokens_to_redact if t]
 
 
 def _redact_tokens(data: dict[str, Any], tokens: list[str]) -> dict[str, Any]:
-    """Replace token literals in all string values of data dict with [REDACTED]."""
+    """Replace token literals in all string values of ``data`` with ``[REDACTED]``."""
     if not tokens:
         return data
     result = {}
