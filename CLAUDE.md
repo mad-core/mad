@@ -22,6 +22,8 @@ Project conventions and hard rules for anyone (human or Claude) working in this 
 
 7. **AskUserQuestion for all user input.** Claude NEVER asks questions as plain text in a response turn. Whenever Claude needs a decision, confirmation, classification, or any input from the user — issue type, plan approval, branch selection, draft review — it MUST use the `AskUserQuestion` tool. Plain text in a response is for informing only, never for soliciting decisions. This rule applies to every skill, command, and workflow in this repo without exception.
 
+8. **Events module is observability only.** `mad.core.events` exposes Mad's event vocabulary verbatim over a cross-session SSE + query surface — it does NOT translate, classify, dispatch, or otherwise act on events. No webhook receivers, no schedulers, no orchestration belong here; those go in a separate `core/orchestration/` module when concrete external payloads exist. Scope boundary and the rationale (vocabulary verbatim, slow-subscriber disconnect, deferred translation) live in [ADR-0004](docs/adr/0004-events-module-vocabulary-and-scope.md).
+
 ## Commits and PRs
 
 | Command | Purpose |
