@@ -5,7 +5,7 @@
 
 ## Context
 
-Mad streams per-session events over `GET /v1/sessions/{id}/stream`. Operators running multiple concurrent sessions cannot observe the system as a whole: there is no cross-session live tail, no historical query across sessions, and a reconnecting client cannot recover events it missed during a network gap.
+Mad previously streamed per-session events over `GET /v1/sessions/{id}/stream`. Operators running multiple concurrent sessions could not observe the system as a whole: there was no cross-session live tail, no historical query across sessions, and a reconnecting client could not recover events it missed during a network gap.
 
 Adding a cross-session events surface raises two open design questions that future contributors will otherwise re-derive each time the module is touched:
 
@@ -70,6 +70,10 @@ Each subscriber gets a bounded `asyncio.Queue`. When the queue fills (publisher 
 - When a second event source lands, we pay translation cost in one place (a translator at the source boundary), and this ADR is amended or superseded.
 - The `?agent=` resolution requires reading historical `session.created` events on every stream open. For v1 volume this is cheap; if the JSONL log grows large enough that the resolve step dominates open latency, we cache or index.
 - Disconnect-on-overflow surprises operators expecting an "always-on" stream. This is documented in the SSE endpoint behavior; reconnect with `Last-Event-ID` is the recovery path.
+
+**Revisited 2026-05-06 — legacy per-session stream removed:**
+
+Once `GET /v1/events/stream` reached parity — session/kind/agent filtering, `Last-Event-ID` replay, and typed `Event` payloads with `event_id` — the legacy `GET /v1/sessions/{id}/stream` endpoint was removed. It lacked filtering (no `kind` or `agent` param), replay (no `Last-Event-ID` support), cross-session reach, and typed payloads (raw JSONL lines). The new surface supersedes it on every dimension. No migration path is provided; the endpoint had no cross-session consumers.
 
 **Revisit if:**
 

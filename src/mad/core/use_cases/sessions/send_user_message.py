@@ -45,13 +45,11 @@ class SendUserMessageUseCase:
         self,
         repo: SessionRepository,
         sessions_index: dict[str, Session],
-        sse_queues: dict[str, asyncio.Queue[Any]],
         get_launcher: Callable[[str], Any],
         event_bus: EventBus,
     ) -> None:
         self._repo = repo
         self._sessions = sessions_index
-        self._sse_queues = sse_queues
         self._get_launcher = get_launcher
         self._event_bus = event_bus
 
@@ -76,7 +74,6 @@ class SendUserMessageUseCase:
                 session=session,
                 session_id=payload.session_id,
                 prompt=payload.content,
-                sse_queues=self._sse_queues,
                 get_launcher=self._get_launcher,
                 event_bus=self._event_bus,
             )
@@ -88,14 +85,11 @@ async def _run_launcher(
     session: Session,
     session_id: str,
     prompt: str,
-    sse_queues: dict[str, asyncio.Queue[Any]],
     get_launcher: Callable[[str], Any],
     event_bus: EventBus,
 ) -> None:
     """Internal coroutine: run the launcher and handle lifecycle events."""
-    await _emit_and_push(
-        repo, session, session_id, sse_queues, event_bus, "session.status_running"
-    )
+    await _emit(repo, session, session_id, event_bus, "session.status_running")
     session.mark_running()
 
     tokens_to_redact = _collect_tokens(session)
@@ -109,9 +103,7 @@ async def _run_launcher(
             if data and tokens_to_redact
             else data
         )
-        await _emit_and_push(
-            repo, session, session_id, sse_queues, event_bus, event_type, redacted_data
-        )
+        await _emit(repo, session, session_id, event_bus, event_type, redacted_data)
         if event_type == "session.status_idle":
             session.mark_idle()
         elif event_type == "session.error":
@@ -121,11 +113,10 @@ async def _run_launcher(
         await launcher.run(prompt=prompt, workspace=workspace, emit=emit)
     except Exception as exc:
         if session.status == "running":
-            await _emit_and_push(
+            await _emit(
                 repo,
                 session,
                 session_id,
-                sse_queues,
                 event_bus,
                 "session.error",
                 {"error": str(exc)},
@@ -142,36 +133,27 @@ async def _run_launcher(
         auto_sync_prompt = build_auto_sync_prompt(session_id, session.base_branch)
         await launcher.run(prompt=auto_sync_prompt, workspace=workspace, emit=emit)
     except Exception as exc:
-        await _emit_and_push(
+        await _emit(
             repo,
             session,
             session_id,
-            sse_queues,
             event_bus,
             "session.error",
             {"error": f"auto-sync failed: {exc}"},
         )
         session.mark_error()
-    finally:
-        q = sse_queues.get(session_id)
-        if q is not None:
-            await q.put(None)
 
 
-async def _emit_and_push(
+async def _emit(
     repo: SessionRepository,
     session: Session,
     session_id: str,
-    sse_queues: dict[str, asyncio.Queue[Any]],
     event_bus: EventBus,
     event_type: str,
     data: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Append event to log, push to SSE queue, and publish to the event bus."""
+    """Append event to log and publish to the event bus."""
     event_dict = repo.append_event(session_id, event_type, data)
-    q = sse_queues.get(session_id)
-    if q is not None:
-        q.put_nowait(event_dict)
     await event_bus.publish(event_from_persisted(event_dict, session_id))
     return event_dict
 

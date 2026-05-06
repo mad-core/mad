@@ -37,11 +37,9 @@ def _make_session(session_id="sesn_del"):
 def test_delete_session_happy_path():
     sessions = {"sesn_del": _make_session()}
     provisioner = FakeProvisioner()
-    sse_queues = {}
     uc = DeleteSessionUseCase(
         provisioner=provisioner,
         sessions_index=sessions,
-        sse_queues=sse_queues,
     )
     out = uc.execute("sesn_del")
     assert out.status == "deleted"
@@ -50,29 +48,12 @@ def test_delete_session_happy_path():
     assert "sesn_del" in provisioner.destroyed
 
 
-def test_delete_session_cleans_sse_queue():
-    import asyncio
-
-    sessions = {"sesn_del": _make_session()}
-    provisioner = FakeProvisioner()
-    q = asyncio.Queue()
-    sse_queues = {"sesn_del": q}
-    uc = DeleteSessionUseCase(
-        provisioner=provisioner,
-        sessions_index=sessions,
-        sse_queues=sse_queues,
-    )
-    uc.execute("sesn_del")
-    assert "sesn_del" not in sse_queues
-
-
 def test_delete_session_not_found_raises():
     sessions: dict = {}
     provisioner = FakeProvisioner()
     uc = DeleteSessionUseCase(
         provisioner=provisioner,
         sessions_index=sessions,
-        sse_queues={},
     )
     with pytest.raises(SessionNotFound):
         uc.execute("sesn_missing")

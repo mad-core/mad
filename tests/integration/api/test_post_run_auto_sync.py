@@ -135,11 +135,10 @@ def test_post_run_auto_sync_invokes_second_launcher_run(
     )
     assert r.status_code in (200, 202)
 
-    # Drain the SSE stream to ensure the background task completed.
-    with client.stream("GET", f"/v1/sessions/{session_id}/stream") as resp:
-        for line in resp.iter_lines():
-            if line.startswith("data:"):
-                pass
+    # Poll until both launcher runs complete (primary + auto-sync).
+    deadline = time.monotonic() + 5.0
+    while len(fake_launcher.calls) < 2 and time.monotonic() < deadline:
+        time.sleep(0.05)
 
     assert len(fake_launcher.calls) == 2, (
         f"expected 2 launcher invocations (primary + auto-sync), got {len(fake_launcher.calls)}"
@@ -209,9 +208,11 @@ def test_post_run_auto_sync_runs_even_when_primary_fails(
         f"/v1/sessions/{session_id}/events",
         json={"events": [{"type": "user.message", "content": "go"}]},
     )
-    with client.stream("GET", f"/v1/sessions/{session_id}/stream") as resp:
-        for _ in resp.iter_lines():
-            pass
+
+    # Poll until both launcher runs complete (primary + auto-sync).
+    deadline = time.monotonic() + 5.0
+    while len(fake_launcher.calls) < 2 and time.monotonic() < deadline:
+        time.sleep(0.05)
 
     assert len(fake_launcher.calls) == 2
 

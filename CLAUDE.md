@@ -70,6 +70,9 @@ Load-bearing decisions are recorded as ADRs in `docs/adr/` — see `docs/adr/REA
 - [ADR-0001](docs/adr/0001-testing-strategy.md) — testing heuristic and coverage thresholds.
 - [ADR-0002](docs/adr/0002-quality-tooling-bundle.md) — ruff, mypy, import-linter, pre-commit, gitleaks, pip-audit, CI layout.
 - [ADR-0003](docs/adr/0003-package-layout.md) — hexagonal package layout; test doubles live under `tests/support/`, not `src/`.
+- [ADR-0004](docs/adr/0004-events-module-vocabulary-and-scope.md) — events module vocabulary, scope, deferred translation, and removal of the legacy per-session stream.
+- [ADR-0005](docs/adr/0005-uuidv7-event-id.md) — UUIDv7 `event_id` for `Last-Event-ID` catch-up.
+- [ADR-0006](docs/adr/0006-multi-tenancy-deferred.md) — multi-tenancy deferred to a future module.
 
 ## Key files
 
@@ -81,7 +84,8 @@ Load-bearing decisions are recorded as ADRs in `docs/adr/` — see `docs/adr/REA
 - `src/mad/adapters/inbound/http/dependencies.py` — composition root; builds production defaults for all outbound dependencies.
 - `src/mad/core/domain/` — pure entities, value objects, domain exceptions (no I/O, no framework imports).
 - `src/mad/core/ports/outbound/` — `SessionRepository`, `WorkspaceProvisioner`, `AgentLauncher` Protocol interfaces.
-- `src/mad/core/use_cases/sessions/` — application logic: create, send message, get, list, delete, stream events.
+- `src/mad/core/use_cases/sessions/` — application logic: create, send message, get, list, delete.
+- `src/mad/core/use_cases/events/` — cross-session event surface: `QueryEventsUseCase` (`GET /v1/events`) and `StreamEventsUseCase` (`GET /v1/events/stream`).
 - `src/mad/adapters/outbound/persistence/` — `JsonlSessionRepository` (JSONL file log, hard rule 6) and `LocalWorkspaceProvisioner`.
 - `src/mad/adapters/outbound/agents/` — production `AgentLauncher` implementations (`claude_cli`) and the by-name `factory.get_launcher` extension point.
 - `src/mad/entry_points/cli.py` — uvicorn launcher, `mad` console script entry point.

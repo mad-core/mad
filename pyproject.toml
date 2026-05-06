@@ -130,6 +130,7 @@ ignore = [
   "E501",    # line length: tests often inline JSON payloads/URLs
   "F841",    # unused locals: occasional `_ = uc.execute(...)` for clarity
   "RUF059",  # unused unpack vars: tuple destructuring in test fixtures
+  "ASYNC110", # polling test state with `while ...: await asyncio.sleep` is fine in tests
 ]
 
 [tool.ruff.lint.isort]

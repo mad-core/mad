@@ -50,7 +50,6 @@ def test_send_message_session_not_found():
     uc = SendUserMessageUseCase(
         repo=FakeRepo(),
         sessions_index=sessions,
-        sse_queues={},
         get_launcher=lambda name: None,
         event_bus=FakeEventBus(),
     )
@@ -65,8 +64,7 @@ async def test_send_message_runs_launcher_and_redacts_tokens():
     repo = FakeRepo()
     token = "ghp_secretXYZ"
     sessions = {"sesn_msg": _make_session(tokens=[token])}
-    sse_queue: asyncio.Queue = asyncio.Queue()
-    sse_queues = {"sesn_msg": sse_queue}
+    bus = FakeEventBus()
 
     class ScriptedLauncher:
         async def run(self, prompt, workspace, emit):
@@ -76,16 +74,21 @@ async def test_send_message_runs_launcher_and_redacts_tokens():
     uc = SendUserMessageUseCase(
         repo=repo,
         sessions_index=sessions,
-        sse_queues=sse_queues,
         get_launcher=lambda name: ScriptedLauncher(),
-        event_bus=FakeEventBus(),
+        event_bus=bus,
     )
 
     uc.execute(SendUserMessageInput(session_id="sesn_msg", content="hello"))
-    while True:
-        event = await asyncio.wait_for(sse_queue.get(), timeout=1.0)
-        if event is None:
-            break
+    # Wait until the background task finishes (two launcher runs = two status_idle).
+    # Poll until status reaches a terminal state (not "created" or "running").
+    deadline = asyncio.get_event_loop().time() + 2.0
+    while (
+        sessions["sesn_msg"].status in ("created", "running")
+        and asyncio.get_event_loop().time() < deadline
+    ):
+        await asyncio.sleep(0.05)
+    # Give the second auto-sync run a moment to also complete.
+    await asyncio.sleep(0.1)
 
     types = [e["type"] for e in repo.events]
     # Primary run + post-run auto-sync run (issue #8): the launcher is invoked
@@ -112,8 +115,7 @@ async def test_post_run_auto_sync_invokes_second_launcher_run():
     repo = FakeRepo()
     sessions = {"sesn_msg": _make_session()}
     sessions["sesn_msg"].base_branch = "develop"
-    sse_queue: asyncio.Queue = asyncio.Queue()
-    sse_queues = {"sesn_msg": sse_queue}
+    bus = FakeEventBus()
 
     calls: list[str] = []
 
@@ -125,16 +127,14 @@ async def test_post_run_auto_sync_invokes_second_launcher_run():
     uc = SendUserMessageUseCase(
         repo=repo,
         sessions_index=sessions,
-        sse_queues=sse_queues,
         get_launcher=lambda name: RecordingLauncher(),
-        event_bus=FakeEventBus(),
+        event_bus=bus,
     )
 
     uc.execute(SendUserMessageInput(session_id="sesn_msg", content="hello"))
-    while True:
-        event = await asyncio.wait_for(sse_queue.get(), timeout=1.0)
-        if event is None:
-            break
+    deadline = asyncio.get_event_loop().time() + 2.0
+    while len(calls) < 2 and asyncio.get_event_loop().time() < deadline:
+        await asyncio.sleep(0.05)
 
     assert len(calls) == 2
     assert calls[0] == "hello"
@@ -148,8 +148,7 @@ async def test_post_run_auto_sync_runs_even_when_primary_fails():
     """Auto-sync must run even when the primary launcher raises (issue #8)."""
     repo = FakeRepo()
     sessions = {"sesn_msg": _make_session()}
-    sse_queue: asyncio.Queue = asyncio.Queue()
-    sse_queues = {"sesn_msg": sse_queue}
+    bus = FakeEventBus()
 
     calls: list[str] = []
 
@@ -163,16 +162,14 @@ async def test_post_run_auto_sync_runs_even_when_primary_fails():
     uc = SendUserMessageUseCase(
         repo=repo,
         sessions_index=sessions,
-        sse_queues=sse_queues,
         get_launcher=lambda name: FlakyLauncher(),
-        event_bus=FakeEventBus(),
+        event_bus=bus,
     )
 
     uc.execute(SendUserMessageInput(session_id="sesn_msg", content="hi"))
-    while True:
-        event = await asyncio.wait_for(sse_queue.get(), timeout=1.0)
-        if event is None:
-            break
+    deadline = asyncio.get_event_loop().time() + 2.0
+    while len(calls) < 2 and asyncio.get_event_loop().time() < deadline:
+        await asyncio.sleep(0.05)
 
     assert len(calls) == 2, "second (auto-sync) run must fire even after primary failure"
 
@@ -181,8 +178,7 @@ async def test_post_run_auto_sync_failure_emits_session_error():
     """If the auto-sync run itself raises, surface it as session.error (issue #8)."""
     repo = FakeRepo()
     sessions = {"sesn_msg": _make_session()}
-    sse_queue: asyncio.Queue = asyncio.Queue()
-    sse_queues = {"sesn_msg": sse_queue}
+    bus = FakeEventBus()
 
     calls: list[int] = []
 
@@ -197,16 +193,17 @@ async def test_post_run_auto_sync_failure_emits_session_error():
     uc = SendUserMessageUseCase(
         repo=repo,
         sessions_index=sessions,
-        sse_queues=sse_queues,
         get_launcher=lambda name: AutoSyncBoom(),
-        event_bus=FakeEventBus(),
+        event_bus=bus,
     )
 
     uc.execute(SendUserMessageInput(session_id="sesn_msg", content="hi"))
-    while True:
-        event = await asyncio.wait_for(sse_queue.get(), timeout=1.0)
-        if event is None:
-            break
+    deadline = asyncio.get_event_loop().time() + 2.0
+    while (
+        sessions["sesn_msg"].status not in ("idle", "error")
+        and asyncio.get_event_loop().time() < deadline
+    ):
+        await asyncio.sleep(0.05)
 
     error_events = [e for e in repo.events if e["type"] == "session.error"]
     assert any("auto-sync failed" in e.get("error", "") for e in error_events)
@@ -216,8 +213,7 @@ async def test_post_run_auto_sync_failure_emits_session_error():
 async def test_send_message_records_session_error_when_launcher_raises():
     repo = FakeRepo()
     sessions = {"sesn_msg": _make_session()}
-    sse_queue: asyncio.Queue = asyncio.Queue()
-    sse_queues = {"sesn_msg": sse_queue}
+    bus = FakeEventBus()
 
     class BoomLauncher:
         async def run(self, prompt, workspace, emit):
@@ -226,16 +222,17 @@ async def test_send_message_records_session_error_when_launcher_raises():
     uc = SendUserMessageUseCase(
         repo=repo,
         sessions_index=sessions,
-        sse_queues=sse_queues,
         get_launcher=lambda name: BoomLauncher(),
-        event_bus=FakeEventBus(),
+        event_bus=bus,
     )
 
     uc.execute(SendUserMessageInput(session_id="sesn_msg", content="hi"))
-    while True:
-        event = await asyncio.wait_for(sse_queue.get(), timeout=1.0)
-        if event is None:
-            break
+    deadline = asyncio.get_event_loop().time() + 2.0
+    while (
+        sessions["sesn_msg"].status not in ("idle", "error")
+        and asyncio.get_event_loop().time() < deadline
+    ):
+        await asyncio.sleep(0.05)
 
     types = [e["type"] for e in repo.events]
     assert "session.error" in types
@@ -249,8 +246,6 @@ async def test_publishes_every_appended_event_to_the_event_bus():
     emitted during the launcher run."""
     repo = FakeRepo()
     sessions = {"sesn_msg": _make_session()}
-    sse_queue: asyncio.Queue = asyncio.Queue()
-    sse_queues = {"sesn_msg": sse_queue}
     bus = FakeEventBus()
 
     class ScriptedLauncher:
@@ -261,16 +256,18 @@ async def test_publishes_every_appended_event_to_the_event_bus():
     uc = SendUserMessageUseCase(
         repo=repo,
         sessions_index=sessions,
-        sse_queues=sse_queues,
         get_launcher=lambda name: ScriptedLauncher(),
         event_bus=bus,
     )
 
     uc.execute(SendUserMessageInput(session_id="sesn_msg", content="please"))
-    while True:
-        event = await asyncio.wait_for(sse_queue.get(), timeout=1.0)
-        if event is None:
-            break
+    deadline = asyncio.get_event_loop().time() + 2.0
+    while (
+        sessions["sesn_msg"].status in ("created", "running")
+        and asyncio.get_event_loop().time() < deadline
+    ):
+        await asyncio.sleep(0.05)
+    await asyncio.sleep(0.1)
 
     repo_types = [e["type"] for e in repo.events]
     bus_types = [e.type for e in bus.published]

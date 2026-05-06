@@ -11,10 +11,7 @@ Business logic lives in mad.core.use_cases.sessions.*.
 
 from __future__ import annotations
 
-import json
-
 from fastapi import APIRouter, Header, Request
-from fastapi.responses import StreamingResponse
 
 from mad.core.sessions import SessionStore
 from mad.core.use_cases.sessions.create_session import (
@@ -29,7 +26,6 @@ from mad.core.use_cases.sessions.send_user_message import (
     SendUserMessageInput,
     SendUserMessageUseCase,
 )
-from mad.core.use_cases.sessions.stream_session_events import StreamSessionEventsUseCase
 
 router = APIRouter()
 
@@ -85,9 +81,6 @@ async def create_session(
         )
     )
 
-    # Ensure SSE queue exists for the session
-    store.get_or_create_queue(output.session.session_id)
-
     return output.session.response
 
 
@@ -100,7 +93,6 @@ async def send_events(session_id: str, request: Request) -> dict:
     use_case = SendUserMessageUseCase(
         repo=_repo(request),
         sessions_index=store.sessions,
-        sse_queues=store.sse_queues,
         get_launcher=request.app.state.launcher_factory,
         event_bus=request.app.state.event_bus,
     )
@@ -111,26 +103,6 @@ async def send_events(session_id: str, request: Request) -> dict:
             use_case.execute(SendUserMessageInput(session_id=session_id, content=content))
 
     return {"status": "accepted"}
-
-
-@router.get("/v1/sessions/{session_id}/stream")
-async def stream_session(session_id: str, request: Request) -> StreamingResponse:
-    store = _store(request)
-
-    use_case = StreamSessionEventsUseCase(
-        sessions_index=store.sessions,
-        sse_queues=store.sse_queues,
-    )
-    queue = use_case.execute(session_id)
-
-    async def event_generator():
-        while True:
-            event = await queue.get()
-            if event is None:
-                break
-            yield f"data: {json.dumps(event)}\n\n"
-
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 @router.get("/v1/sessions/{session_id}")
@@ -167,7 +139,6 @@ async def delete_session(session_id: str, request: Request) -> dict:
     use_case = DeleteSessionUseCase(
         provisioner=_provisioner(request),
         sessions_index=store.sessions,
-        sse_queues=store.sse_queues,
     )
     output = use_case.execute(session_id)
     return {"status": output.status, "session_id": output.session_id}

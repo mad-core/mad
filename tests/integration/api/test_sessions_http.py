@@ -19,7 +19,6 @@ These tests are EXPECTED to fail until the implementer runs (red TDD state).
 
 from __future__ import annotations
 
-import contextlib
 import json
 import time
 from pathlib import Path
@@ -181,17 +180,21 @@ def test_mvp_02b_send_event_is_non_blocking(
 
 
 # ---------------------------------------------------------------------------
-# AC-3b: SSE stream emits session.status_running and session.status_idle
+# AC-3b: Lifecycle events (session.status_running, session.status_idle) are
+# persisted and visible via GET /v1/sessions/{id}.
+# (The per-session SSE stream was removed; cross-session events live at
+#  GET /v1/events and GET /v1/events/stream — see test_events_http.py.)
 # (AC-3 / test_mvp_03_stream_emits_agent_events is REMOVED: agent.tool_use
 #  events no longer exist in the infrastructure-only model.)
 # Covers FR-5, FR-6
 # ---------------------------------------------------------------------------
 
 
-def test_mvp_03b_stream_emits_lifecycle_events(
+def test_mvp_03b_lifecycle_events_persisted(
     client: TestClient, fake_launcher, session_payload: dict
 ) -> None:
-    """Stream must emit session.status_running when launch starts and session.status_idle when done."""
+    """After agent finishes, GET /v1/sessions/{id} must include
+    session.status_running and session.status_idle events."""
     fake_launcher.script([[{"type": "session.status_idle", "stop_reason": "end_turn"}]])
     session_id = client.post("/v1/sessions", json=session_payload).json()["session_id"]
     client.post(
@@ -199,32 +202,25 @@ def test_mvp_03b_stream_emits_lifecycle_events(
         json={"events": [{"type": "user.message", "content": "work"}]},
     )
 
-    with client.stream("GET", f"/v1/sessions/{session_id}/stream") as r:
-        assert r.status_code == 200
-        assert "text/event-stream" in r.headers.get("content-type", "")
-        collected: list[dict] = []
-        for line in r.iter_lines():
-            if line.startswith("data:"):
-                payload_str = line[len("data:") :].strip()
-                with contextlib.suppress(json.JSONDecodeError):
-                    collected.append(json.loads(payload_str))
-            if any(e.get("type") == "session.status_idle" for e in collected):
-                break
+    # Poll until the agent background task finishes (status leaves "running").
+    deadline = time.monotonic() + 5.0
+    while time.monotonic() < deadline:
+        r = client.get(f"/v1/sessions/{session_id}")
+        if r.status_code == 200 and r.json().get("status") not in ("created", "running"):
+            break
+        time.sleep(0.05)
 
-    event_types = {e["type"] for e in collected}
+    r = client.get(f"/v1/sessions/{session_id}")
+    assert r.status_code == 200
+    data = r.json()
+    event_types = {e["type"] for e in data["events"]}
     assert "session.status_running" in event_types, (
         f"expected session.status_running, got: {event_types}"
     )
     assert "session.status_idle" in event_types, f"expected session.status_idle, got: {event_types}"
     # The idle event must carry a stop_reason
-    idle_events = [e for e in collected if e.get("type") == "session.status_idle"]
+    idle_events = [e for e in data["events"] if e.get("type") == "session.status_idle"]
     assert idle_events[0].get("stop_reason") is not None
-
-
-def test_mvp_03b_stream_unknown_session_returns_404(client: TestClient) -> None:
-    """GET /v1/sessions/unknown/stream must return 404, not 500."""
-    r = client.get("/v1/sessions/sesn_doesnotexist/stream")
-    assert r.status_code == 404
 
 
 # ---------------------------------------------------------------------------
