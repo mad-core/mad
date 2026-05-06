@@ -29,9 +29,7 @@ class InMemoryEventBus:
 
     def __init__(self, max_queue_size: int = _DEFAULT_QUEUE_SIZE) -> None:
         self._max_queue_size = max_queue_size
-        self._subscribers: list[
-            tuple[EventFilter, asyncio.Queue[Event | object]]
-        ] = []
+        self._subscribers: list[tuple[EventFilter, asyncio.Queue[Event | object]]] = []
 
     async def publish(self, event: Event) -> None:
         """Deliver ``event`` to every matching subscriber.
@@ -55,9 +53,7 @@ class InMemoryEventBus:
     def subscribe(self, event_filter: EventFilter) -> AsyncIterator[Event]:
         """Register a subscriber and return its event stream."""
         # +1 reserves a slot for the disconnect sentinel even when full.
-        queue: asyncio.Queue[Event | object] = asyncio.Queue(
-            self._max_queue_size + 1
-        )
+        queue: asyncio.Queue[Event | object] = asyncio.Queue(self._max_queue_size + 1)
         entry = (event_filter, queue)
         self._subscribers.append(entry)
         return self._consume(entry, queue)
@@ -80,10 +76,7 @@ class InMemoryEventBus:
 
 
 def _matches(event: Event, event_filter: EventFilter) -> bool:
-    if (
-        event_filter.session_id is not None
-        and event.session_id != event_filter.session_id
-    ):
+    if event_filter.session_id is not None and event.session_id != event_filter.session_id:
         return False
     if event_filter.kind is not None and event.type != event_filter.kind:
         return False

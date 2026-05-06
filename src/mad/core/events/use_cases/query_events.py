@@ -47,9 +47,7 @@ class QueryEventsUseCase:
 
     def execute(self, payload: QueryEventsInput) -> QueryEventsOutput:
         agent_sessions = (
-            self._log.session_ids_for_agent(payload.agent)
-            if payload.agent is not None
-            else None
+            self._log.session_ids_for_agent(payload.agent) if payload.agent is not None else None
         )
 
         effective_limit = max(1, min(payload.limit, self.MAX_LIMIT))

@@ -63,10 +63,7 @@ async def _drain(queue: asyncio.Queue[Event | None]) -> AsyncIterator[Event]:
 
 
 def _matches(event: Event, event_filter: EventFilter) -> bool:
-    if (
-        event_filter.session_id is not None
-        and event.session_id != event_filter.session_id
-    ):
+    if event_filter.session_id is not None and event.session_id != event_filter.session_id:
         return False
     if event_filter.kind is not None and event.type != event_filter.kind:
         return False
@@ -105,10 +102,7 @@ def _matches_query(event: Event, q: EventQuery) -> bool:
         return False
     if q.kind is not None and event.type != q.kind:
         return False
-    if (
-        q.session_ids_for_agent is not None
-        and event.session_id not in q.session_ids_for_agent
-    ):
+    if q.session_ids_for_agent is not None and event.session_id not in q.session_ids_for_agent:
         return False
     if q.since is not None and event.timestamp < q.since:
         return False

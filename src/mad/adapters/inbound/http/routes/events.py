@@ -92,9 +92,7 @@ async def stream_events(
     session_id: Annotated[str | None, Query()] = None,
     kind: Annotated[str | None, Query()] = None,
     agent: Annotated[str | None, Query()] = None,
-    last_event_id_header: Annotated[
-        str | None, Header(alias="Last-Event-ID")
-    ] = None,
+    last_event_id_header: Annotated[str | None, Header(alias="Last-Event-ID")] = None,
 ) -> StreamingResponse:
     parsed_last = UUID(last_event_id_header) if last_event_id_header else None
     use_case = StreamEventsUseCase(bus=_bus(request), log=_log(request))
@@ -110,9 +108,7 @@ async def stream_events(
         async for event in use_case.execute(payload):
             serialized = _serialize_event(event)
             id_line = (
-                f"id: {serialized['event_id']}\n"
-                if serialized["event_id"] is not None
-                else ""
+                f"id: {serialized['event_id']}\n" if serialized["event_id"] is not None else ""
             )
             yield f"{id_line}data: {json.dumps(serialized)}\n\n"
 

@@ -66,10 +66,7 @@ def _matches(event: Event, q: EventQuery) -> bool:
         return False
     if q.kind is not None and event.type != q.kind:
         return False
-    if (
-        q.session_ids_for_agent is not None
-        and event.session_id not in q.session_ids_for_agent
-    ):
+    if q.session_ids_for_agent is not None and event.session_id not in q.session_ids_for_agent:
         return False
     if q.since is not None and event.timestamp < q.since:
         return False

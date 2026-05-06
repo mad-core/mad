@@ -87,9 +87,7 @@ def test_get_events_filters_by_session_and_kind(http_client: TestClient) -> None
 
 def test_get_events_paginates_with_next_cursor(http_client: TestClient) -> None:
     repo = JsonlSessionRepository()
-    _write_session_events(
-        repo, "sesn_a", [("agent.output", {"line": str(i)}) for i in range(5)]
-    )
+    _write_session_events(repo, "sesn_a", [("agent.output", {"line": str(i)}) for i in range(5)])
 
     page1 = http_client.get("/v1/events", params={"limit": 2}).json()
     assert len(page1["events"]) == 2
@@ -111,9 +109,7 @@ def test_get_events_filters_by_agent_via_session_created_resolution(
     _write_session_events(repo, "sesn_a", [("agent.output", {"line": "from a"})])
     _write_session_events(repo, "sesn_b", [("agent.output", {"line": "from b"})])
 
-    response = http_client.get(
-        "/v1/events", params={"agent": "claude_cli", "kind": "agent.output"}
-    )
+    response = http_client.get("/v1/events", params={"agent": "claude_cli", "kind": "agent.output"})
 
     events = response.json()["events"]
     assert [e["session_id"] for e in events] == ["sesn_a"]

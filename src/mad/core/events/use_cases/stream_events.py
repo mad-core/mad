@@ -39,9 +39,7 @@ class StreamEventsUseCase:
 
     async def execute(self, payload: StreamEventsInput) -> AsyncIterator[Event]:
         session_ids_for_agent = (
-            self._log.session_ids_for_agent(payload.agent)
-            if payload.agent is not None
-            else None
+            self._log.session_ids_for_agent(payload.agent) if payload.agent is not None else None
         )
 
         bus_filter = EventFilter(
@@ -62,9 +60,7 @@ class StreamEventsUseCase:
         dedup_until = payload.last_event_id
 
         if payload.last_event_id is not None:
-            async for event in self._replay(
-                payload, session_ids_for_agent, payload.last_event_id
-            ):
+            async for event in self._replay(payload, session_ids_for_agent, payload.last_event_id):
                 yield event
                 if event.event_id is not None:
                     dedup_until = event.event_id

@@ -54,9 +54,7 @@ def test_query_returns_events_across_sessions_in_event_id_order(
     assert len(events) == 3
 
 
-def test_filter_by_session_id(
-    repo: JsonlSessionRepository, query: JsonlEventLogQuery
-) -> None:
+def test_filter_by_session_id(repo: JsonlSessionRepository, query: JsonlEventLogQuery) -> None:
     repo.append_event("sesn_a", "agent.output", {"line": "a"})
     repo.append_event("sesn_b", "agent.output", {"line": "b"})
 
@@ -66,9 +64,7 @@ def test_filter_by_session_id(
     assert events[0].data["line"] == "a"
 
 
-def test_filter_by_kind(
-    repo: JsonlSessionRepository, query: JsonlEventLogQuery
-) -> None:
+def test_filter_by_kind(repo: JsonlSessionRepository, query: JsonlEventLogQuery) -> None:
     repo.append_event("sesn_a", "agent.output", {"line": "x"})
     repo.append_event("sesn_a", "session.status_idle", None)
 
@@ -91,9 +87,7 @@ def test_filter_after_event_id_for_last_event_id_catchup(
     assert [str(e.event_id) for e in events] == [e2["event_id"], e3["event_id"]]
 
 
-def test_filter_since_timestamp(
-    repo: JsonlSessionRepository, query: JsonlEventLogQuery
-) -> None:
+def test_filter_since_timestamp(repo: JsonlSessionRepository, query: JsonlEventLogQuery) -> None:
     repo.append_event("sesn_a", "agent.output", {"line": "old"})
     cutoff = datetime.now(UTC) + timedelta(seconds=1)
     repo.append_event("sesn_a", "agent.output", {"line": "still-old"})
@@ -103,9 +97,7 @@ def test_filter_since_timestamp(
     assert events == []
 
 
-def test_limit_caps_results(
-    repo: JsonlSessionRepository, query: JsonlEventLogQuery
-) -> None:
+def test_limit_caps_results(repo: JsonlSessionRepository, query: JsonlEventLogQuery) -> None:
     for i in range(5):
         repo.append_event("sesn_a", "agent.output", {"line": f"line {i}"})
         time.sleep(0.002)

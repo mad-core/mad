@@ -143,9 +143,7 @@ async def test_session_id_and_kind_filters_passed_to_bus() -> None:
     log = FakeEventLogQuery()
     use_case = StreamEventsUseCase(bus=bus, log=log)
 
-    stream = use_case.execute(
-        StreamEventsInput(session_id="sesn_a", kind="agent.output")
-    )
+    stream = use_case.execute(StreamEventsInput(session_id="sesn_a", kind="agent.output"))
 
     await bus.publish(_event(session_id="sesn_b", type="agent.output"))
     await bus.publish(_event(session_id="sesn_a", type="session.status_idle"))

@@ -97,9 +97,7 @@ async def test_filter_by_kind_narrows_delivery() -> None:
 
 async def test_filter_by_agent_resolved_session_ids() -> None:
     bus = InMemoryEventBus()
-    stream = bus.subscribe(
-        EventFilter(session_ids_for_agent=frozenset({"sesn_a", "sesn_b"}))
-    )
+    stream = bus.subscribe(EventFilter(session_ids_for_agent=frozenset({"sesn_a", "sesn_b"})))
 
     await bus.publish(_event(session_id="sesn_other"))
     a = _event(session_id="sesn_a")
@@ -113,9 +111,7 @@ async def test_filter_by_agent_resolved_session_ids() -> None:
 
 async def test_filters_are_and_combined() -> None:
     bus = InMemoryEventBus()
-    stream = bus.subscribe(
-        EventFilter(session_id="sesn_a", kind="agent.output")
-    )
+    stream = bus.subscribe(EventFilter(session_id="sesn_a", kind="agent.output"))
 
     # Each fails one of the two filters.
     await bus.publish(_event(session_id="sesn_b", type="agent.output"))
