@@ -53,8 +53,8 @@ def test_launcher_output_lines_emitted_as_agent_output(
     session_id = data["session_id"]
 
     r = client.post(
-        f"/v1/sessions/{session_id}/events",
-        json={"events": [{"type": "user.message", "content": "stream output please"}]},
+        f"/v1/sessions/{session_id}/messages",
+        json={"content": "stream output please"},
     )
     assert r.status_code in (200, 202)
 

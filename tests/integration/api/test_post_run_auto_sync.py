@@ -130,8 +130,8 @@ def test_post_run_auto_sync_invokes_second_launcher_run(
     )
     session_id = client.post("/v1/sessions", json=session_payload).json()["session_id"]
     r = client.post(
-        f"/v1/sessions/{session_id}/events",
-        json={"events": [{"type": "user.message", "content": "do work"}]},
+        f"/v1/sessions/{session_id}/messages",
+        json={"content": "do work"},
     )
     assert r.status_code in (200, 202)
 
@@ -179,8 +179,8 @@ def test_post_run_auto_sync_uses_base_branch_in_prompt(
     }
     session_id = client.post("/v1/sessions", json=payload).json()["session_id"]
     client.post(
-        f"/v1/sessions/{session_id}/events",
-        json={"events": [{"type": "user.message", "content": "go"}]},
+        f"/v1/sessions/{session_id}/messages",
+        json={"content": "go"},
     )
 
     deadline = time.monotonic() + 2.0
@@ -205,8 +205,8 @@ def test_post_run_auto_sync_runs_even_when_primary_fails(
     )
     session_id = client.post("/v1/sessions", json=session_payload).json()["session_id"]
     client.post(
-        f"/v1/sessions/{session_id}/events",
-        json={"events": [{"type": "user.message", "content": "go"}]},
+        f"/v1/sessions/{session_id}/messages",
+        json={"content": "go"},
     )
 
     # Poll until both launcher runs complete (primary + auto-sync).

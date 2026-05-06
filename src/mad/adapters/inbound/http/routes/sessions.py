@@ -27,7 +27,7 @@ from mad.core.sessions.use_cases.send_user_message import (
     SendUserMessageUseCase,
 )
 
-router = APIRouter()
+router = APIRouter(tags=["sessions"])
 
 
 def _store(request: Request) -> SessionStore:
@@ -84,22 +84,18 @@ async def create_session(
     return output.session.response
 
 
-@router.post("/v1/sessions/{session_id}/events")
-async def send_events(session_id: str, request: Request) -> dict:
+@router.post("/v1/sessions/{session_id}/messages")
+async def send_message(session_id: str, request: Request) -> dict:
     store = _store(request)
     body = await request.json()
-    events = body.get("events", [])
+    content = body["content"]
 
     use_case = SendUserMessageUseCase(
         sessions_index=store.sessions,
         get_launcher=request.app.state.launcher_factory,
         emitter=request.app.state.event_emitter,
     )
-
-    for event in events:
-        if event.get("type") == "user.message":
-            content = event.get("content", "")
-            use_case.execute(SendUserMessageInput(session_id=session_id, content=content))
+    use_case.execute(SendUserMessageInput(session_id=session_id, content=content))
 
     return {"status": "accepted"}
 

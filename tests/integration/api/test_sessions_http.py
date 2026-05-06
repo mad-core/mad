@@ -3,8 +3,8 @@
 Acceptance criterion → test mapping:
   AC-1  POST /v1/sessions with a GitHub repo → repo cloned in workspace → test_mvp_01_*
   AC-1b POST /v1/sessions provisions file resource                       → test_mvp_01b_*
-  AC-2  POST /v1/sessions/{id}/events sends user.message                → test_mvp_02_*
-  AC-2b POST /v1/sessions/{id}/events is non-blocking                   → test_mvp_02b_*
+  AC-2  POST /v1/sessions/{id}/messages sends user message              → test_mvp_02_*
+  AC-2b POST /v1/sessions/{id}/messages is non-blocking                 → test_mvp_02b_*
   AC-3b stream emits session.status_running and session.status_idle     → test_mvp_03b_*
   AC-4  GET /v1/sessions/{id} returns final state + every event         → test_mvp_04_*
   AC-4b JSONL session log records every event                           → test_mvp_04b_*
@@ -124,7 +124,7 @@ def test_mvp_01b_mixed_resources_provisioned(
 
 
 # ---------------------------------------------------------------------------
-# AC-2: POST /v1/sessions/{id}/events sends a user.message
+# AC-2: POST /v1/sessions/{id}/messages sends a user message
 # Covers FR-4
 # ---------------------------------------------------------------------------
 
@@ -132,13 +132,13 @@ def test_mvp_01b_mixed_resources_provisioned(
 def test_mvp_02_send_user_message_starts_agent(
     client: TestClient, fake_launcher, session_payload: dict
 ) -> None:
-    """POST /v1/sessions/{id}/events with user.message returns 200/202."""
+    """POST /v1/sessions/{id}/messages with content returns 200/202."""
     fake_launcher.script([[{"type": "session.status_idle", "stop_reason": "end_turn"}]])
     session_id = client.post("/v1/sessions", json=session_payload).json()["session_id"]
 
     r = client.post(
-        f"/v1/sessions/{session_id}/events",
-        json={"events": [{"type": "user.message", "content": "hello"}]},
+        f"/v1/sessions/{session_id}/messages",
+        json={"content": "hello"},
     )
     assert r.status_code in (200, 202)
 
@@ -146,16 +146,16 @@ def test_mvp_02_send_user_message_starts_agent(
 def test_mvp_02_send_event_to_unknown_session_returns_404(
     client: TestClient, fake_launcher
 ) -> None:
-    """Sending an event to a non-existent session must return 404."""
+    """Sending a message to a non-existent session must return 404."""
     r = client.post(
-        "/v1/sessions/sesn_doesnotexist/events",
-        json={"events": [{"type": "user.message", "content": "hi"}]},
+        "/v1/sessions/sesn_doesnotexist/messages",
+        json={"content": "hi"},
     )
     assert r.status_code == 404
 
 
 # ---------------------------------------------------------------------------
-# AC-2b: POST /v1/sessions/{id}/events is non-blocking
+# AC-2b: POST /v1/sessions/{id}/messages is non-blocking
 # Covers FR-6 (background agent launch)
 # ---------------------------------------------------------------------------
 
@@ -163,20 +163,20 @@ def test_mvp_02_send_event_to_unknown_session_returns_404(
 def test_mvp_02b_send_event_is_non_blocking(
     client: TestClient, fake_launcher, session_payload: dict
 ) -> None:
-    """The events endpoint returns immediately; the agent runs in the background."""
+    """The messages endpoint returns immediately; the agent runs in the background."""
     fake_launcher.script([[{"type": "session.status_idle", "stop_reason": "end_turn"}]])
     session_id = client.post("/v1/sessions", json=session_payload).json()["session_id"]
 
     start = time.monotonic()
     r = client.post(
-        f"/v1/sessions/{session_id}/events",
-        json={"events": [{"type": "user.message", "content": "go"}]},
+        f"/v1/sessions/{session_id}/messages",
+        json={"content": "go"},
     )
     elapsed = time.monotonic() - start
     assert r.status_code in (200, 202)
     # The endpoint must return in well under 5 seconds — if the agent launch were
     # blocking, a slow launcher would stall the response.
-    assert elapsed < 5.0, f"events endpoint took {elapsed:.2f}s — must be non-blocking"
+    assert elapsed < 5.0, f"messages endpoint took {elapsed:.2f}s — must be non-blocking"
 
 
 # ---------------------------------------------------------------------------
@@ -198,8 +198,8 @@ def test_mvp_03b_lifecycle_events_persisted(
     fake_launcher.script([[{"type": "session.status_idle", "stop_reason": "end_turn"}]])
     session_id = client.post("/v1/sessions", json=session_payload).json()["session_id"]
     client.post(
-        f"/v1/sessions/{session_id}/events",
-        json={"events": [{"type": "user.message", "content": "work"}]},
+        f"/v1/sessions/{session_id}/messages",
+        json={"content": "work"},
     )
 
     # Poll until the agent background task finishes (status leaves "running").
@@ -236,8 +236,8 @@ def test_mvp_04_get_session_returns_final_state(
     fake_launcher.script([[{"type": "session.status_idle", "stop_reason": "end_turn"}]])
     session_id = client.post("/v1/sessions", json=session_payload).json()["session_id"]
     client.post(
-        f"/v1/sessions/{session_id}/events",
-        json={"events": [{"type": "user.message", "content": "go"}]},
+        f"/v1/sessions/{session_id}/messages",
+        json={"content": "go"},
     )
 
     r = client.get(f"/v1/sessions/{session_id}")
@@ -255,8 +255,8 @@ def test_mvp_04_get_session_events_include_user_message(
     fake_launcher.script([[{"type": "session.status_idle", "stop_reason": "end_turn"}]])
     session_id = client.post("/v1/sessions", json=session_payload).json()["session_id"]
     client.post(
-        f"/v1/sessions/{session_id}/events",
-        json={"events": [{"type": "user.message", "content": "my unique task request"}]},
+        f"/v1/sessions/{session_id}/messages",
+        json={"content": "my unique task request"},
     )
 
     r = client.get(f"/v1/sessions/{session_id}")
@@ -299,8 +299,8 @@ def test_mvp_04b_jsonl_log_records_agent_events(
     r = client.post("/v1/sessions", json=session_payload)
     session_id = r.json()["session_id"]
     client.post(
-        f"/v1/sessions/{session_id}/events",
-        json={"events": [{"type": "user.message", "content": "record me"}]},
+        f"/v1/sessions/{session_id}/messages",
+        json={"content": "record me"},
     )
 
     log_path = Path("sessions") / f"{session_id}.jsonl"
@@ -375,12 +375,12 @@ def test_mvp_06_resume_session_with_new_message(
     session_id = client.post("/v1/sessions", json=session_payload).json()["session_id"]
 
     r1 = client.post(
-        f"/v1/sessions/{session_id}/events",
-        json={"events": [{"type": "user.message", "content": "first task"}]},
+        f"/v1/sessions/{session_id}/messages",
+        json={"content": "first task"},
     )
     r2 = client.post(
-        f"/v1/sessions/{session_id}/events",
-        json={"events": [{"type": "user.message", "content": "second task"}]},
+        f"/v1/sessions/{session_id}/messages",
+        json={"content": "second task"},
     )
     assert r1.status_code in (200, 202)
     assert r2.status_code in (200, 202)
@@ -406,12 +406,12 @@ def test_mvp_06b_resumed_session_log_contains_both_turns(
     session_id = client.post("/v1/sessions", json=session_payload).json()["session_id"]
 
     client.post(
-        f"/v1/sessions/{session_id}/events",
-        json={"events": [{"type": "user.message", "content": "alpha task"}]},
+        f"/v1/sessions/{session_id}/messages",
+        json={"content": "alpha task"},
     )
     client.post(
-        f"/v1/sessions/{session_id}/events",
-        json={"events": [{"type": "user.message", "content": "beta task"}]},
+        f"/v1/sessions/{session_id}/messages",
+        json={"content": "beta task"},
     )
 
     log_path = Path("sessions") / f"{session_id}.jsonl"

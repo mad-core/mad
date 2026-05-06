@@ -38,7 +38,7 @@ from mad.core.events.use_cases.stream_events import (
     StreamEventsUseCase,
 )
 
-router = APIRouter()
+router = APIRouter(tags=["events"])
 
 
 def _bus(request: Request) -> EventBus:
