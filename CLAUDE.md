@@ -49,7 +49,7 @@ Project conventions and hard rules for anyone (human or Claude) working in this 
 
 | Command | Purpose |
 |---|---|
-| `/commit` | Stage and commit changes following Conventional Commits + semantic-release rules. |
+| `/commit` | Plan and execute commits via the `commit-planner` subagent. Enforces hard rule 12 (package-centric scope policy) at the authoring layer; rejects internal scopes in `feat`/`fix`/`perf` and consolidates phase-per-commit inflation. Implemented as a skill at `.claude/skills/commit/SKILL.md`. |
 | `/pr [issue-number]` | Open a pull request for the current branch. Referenced by `/work` at the end of the execution pipeline. |
 
 Claude does NOT commit or open PRs automatically — only when explicitly invoked.
@@ -74,7 +74,8 @@ Project-level skills live in `.claude/skills/`. Invoke with `/skill-name` or via
 | Skill | Path | Purpose |
 |---|---|---|
 | `intake` | `.claude/skills/intake/SKILL.md` | Full issue intake pipeline: classify → search → refine → create. Embeds issue templates in `resources/templates/`. |
-| `work` | `.claude/skills/work/SKILL.md` | Full issue execution pipeline: read → branch → work → write-test ↔ test-critic loop → commit → PR. |
+| `work` | `.claude/skills/work/SKILL.md` | Full issue execution pipeline: read → branch → work → write-test ↔ test-critic loop → plan-and-execute commits via `/commit` (Step 7.7) → verify → PR. |
+| `commit` | `.claude/skills/commit/SKILL.md` | Plan-and-execute commits for the current working tree. Spawns `commit-planner` to map paths to public scopes per hard rule 12, consolidate internal phases, and emit a bisectable sequence. Runs in `standalone` and `from_work` modes; supports `--plan`, `--auto`, `--dry-run`. |
 | `write-test` | `.claude/skills/write-test/SKILL.md` | Auto-loaded when writing or modifying tests. Enforces the eight heuristics in `docs/testing-heuristics.md` (negative twins, single-contract assertions, fakes in `tests/support/`, OpenAPI + SSE contract tests, state-based polling). |
 
 Agents (spawned as subagents by the skills above):
@@ -84,6 +85,7 @@ Agents (spawned as subagents by the skills above):
 | `search-issues` | `.claude/agents/search-issues.md` | Read-only GitHub issue search: duplicates, related, blockers. Spawned by `/intake`. |
 | `write-test` | `.claude/agents/write-test.md` | Writes / fixes pytest tests under the heuristics. Spawned by `/work` Step 7.5; receives critic findings and addresses them without rewriting unrelated tests. Refuses to weaken tests. |
 | `test-critic` | `.claude/agents/test-critic.md` | Read-only mechanical reviewer. Applies the eight heuristics to the test diff and returns a structured PASS/FAIL verdict with per-finding `file:line` + rule number. Never edits, never runs pytest. |
+| `commit-planner` | `.claude/agents/commit-planner.md` | Read-only commit planner. Maps every changed path to a public scope per hard rule 12, consolidates internal phases, enforces the closed scope set `{http, sse, cli, config, agents, deps}` for `feat`/`fix`/`perf`, orders commits for bisectability, and emits the mandatory `Closes #N` and co-author trailers. Spawned by `/commit` (and by `/work` Step 7.7). Never stages or commits. |
 
 **Template sync rule.** `.claude/skills/intake/resources/templates/<type>.md` and `.github/ISSUE_TEMPLATE/<type>.yml` are mirrors. Changing one requires updating the other. The `resources/templates/` files are the canonical source; `.github/ISSUE_TEMPLATE/` files expose them in the GitHub web UI.
 

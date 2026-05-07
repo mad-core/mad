@@ -127,8 +127,9 @@ Work the plan. Follow all hard rules in `CLAUDE.md`, especially:
 - Hard rule 9 (HTTP I/O strongly typed — Pydantic body, declared response shape)
 - Hard rule 10 (tests follow the seven heuristics in `docs/testing-heuristics.md`; the `write-test` skill is auto-invoked when modifying any file under `tests/`)
 
-At logical checkpoints (completing a cohesive unit of work), invoke `/commit` to create commits.
-Do NOT commit everything at the end — commit incrementally as units complete.
+Work the **entire plan WITHOUT committing**. Every edit stays in the working tree until Step 7.7. The full commit plan is designed at the end with complete diff visibility, by the `commit-planner` subagent — this avoids phase-per-commit inflation (one `feat` per internal slice) and keeps internal scopes (`core`, `events`, `sessions`) out of user-facing commits. See CLAUDE.md hard rule 12 and `.claude/skills/commit/SKILL.md`.
+
+The single exception: if execution stretches across multiple sessions and you need to checkpoint progress to disk, use `/commit --plan` ad-hoc — the planner will still consolidate phases on the next pass because it operates on the full diff range.
 
 ---
 
@@ -175,15 +176,32 @@ Cada bug que escapa a la suite y aparece recién al interactuar con la API en pr
 
 ---
 
+## Step 7.7 — Plan and execute commits
+
+The working tree at this point holds the entire issue's worth of changes. Tests already passed inside the test-critic loop on the working tree, so the suite is green. Now design the commit history.
+
+Invoke the `/commit` skill (`.claude/skills/commit/SKILL.md`) in `from_work` mode, passing:
+- `issue_number` = `{issue_number}`
+- `issue_title` = `{issue_title}`
+- `issue_type` = `{issue_type}`
+
+The skill spawns the `commit-planner` subagent (`.claude/agents/commit-planner.md`), which reads the entire diff with full visibility, maps every path to a public scope per CLAUDE.md hard rule 12, consolidates internal phases, and produces a structured plan. The skill then presents the plan via `AskUserQuestion`, applies any adjustments, and executes the staged-and-committed sequence.
+
+Expected shape: 0–N internal commits (`refactor`/`chore`/`test` with internal scopes) followed by exactly ONE user-visible commit (`feat`/`fix`/`perf` with a scope from `{http, sse, cli, config, agents, deps}`) carrying `Closes #{issue_number}` in the body. If the issue is purely internal (no public surface change), the sequence is N internal commits, the last one carrying `Closes #{issue_number}`.
+
+NEVER hand-type commits at this step. The planner enforces hard rule 12 mechanically; bypassing it is exactly the regression #24 was filed to prevent.
+
+---
+
 ## Step 8 — Verify
 
-Run the test suite before opening a PR:
+Run the test suite after the commits land — this catches Option-A violations where a `test:` commit was split out from its production change and now fails alone (`git bisect` correctness check):
 
 ```bash
 make test
 ```
 
-If tests fail, fix them before proceeding. Do not skip this step.
+If tests fail, fix them in a NEW commit (do NOT amend). Do not skip this step.
 
 ---
 
