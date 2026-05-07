@@ -51,5 +51,3 @@ class GetSessionUseCase:
             workspace=session.workspace,
             events=events,
         )
-
-
