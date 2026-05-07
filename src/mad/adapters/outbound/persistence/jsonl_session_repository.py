@@ -90,3 +90,9 @@ class JsonlSessionRepository:
     def exists(self, session_id: str) -> bool:
         """Return True if any events have been persisted for the session."""
         return log_path(session_id).exists()
+
+    def list_session_ids(self) -> list[str]:
+        """Return every session ID with a persisted JSONL log on disk."""
+        if not SESSIONS_DIR.exists():
+            return []
+        return sorted(p.stem for p in SESSIONS_DIR.glob("*.jsonl"))

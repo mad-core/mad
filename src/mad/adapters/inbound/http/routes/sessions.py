@@ -159,7 +159,10 @@ async def get_session(session_id: str, request: Request) -> dict:
 async def list_sessions(request: Request) -> list:
     store = _store(request)
 
-    use_case = ListSessionsUseCase(sessions_index=store.sessions)
+    use_case = ListSessionsUseCase(
+        sessions_index=store.sessions,
+        repo=_repo(request),
+    )
     summaries = use_case.execute()
     return [{"session_id": s.session_id, "status": s.status} for s in summaries]
 

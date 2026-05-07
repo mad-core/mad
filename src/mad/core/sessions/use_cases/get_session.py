@@ -10,6 +10,7 @@ from typing import Any
 
 from mad.core.sessions.domain.entities.session import Session
 from mad.core.sessions.domain.exceptions.base import SessionNotFound
+from mad.core.sessions.domain.rehydrate import rehydrate_from_events
 from mad.core.sessions.ports.outbound.session_repository import SessionRepository
 
 
@@ -39,7 +40,7 @@ class GetSessionUseCase:
             # Attempt JSONL rehydration (hard rule 6)
             if not self._repo.exists(session_id):
                 raise SessionNotFound(session_id)
-            session = _rehydrate_from_events(session_id, self._repo)
+            session = rehydrate_from_events(session_id, self._repo.read_events(session_id))
             # Cache in memory for subsequent requests
             self._sessions[session_id] = session
 
@@ -52,28 +53,3 @@ class GetSessionUseCase:
         )
 
 
-def _rehydrate_from_events(session_id: str, repo: SessionRepository) -> Session:
-    """Build a minimal Session entity from the persisted JSONL events."""
-    events = repo.read_events(session_id)
-    agent: dict[str, Any] = {}
-    workspace = ""
-    status = "created"
-
-    for event in events:
-        etype = event.get("type", "")
-        if etype == "session.created":
-            # agent name stored but not the full dict — reconstruct minimal
-            agent = {"name": event.get("agent", ""), "provider": "unknown"}
-        elif etype == "session.status_running":
-            status = "running"
-        elif etype == "session.status_idle":
-            status = "idle"
-        elif etype == "session.error":
-            status = "error"
-
-    return Session(
-        session_id=session_id,
-        agent=agent,
-        workspace=workspace,
-        status=status,
-    )
