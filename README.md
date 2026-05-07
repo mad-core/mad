@@ -39,33 +39,49 @@ make help      # full target list
 
 ## Quickstart
 
-Create a session against a public repo and stream its events:
+A session has two parts: an **agent spec** (which launcher to run) and a list of **resources** to mount into the isolated workspace. Resources can be `github_repository` (cloned into `mount_path`) or `file` (literal `content` written at `mount_path`). The prompt is sent as a separate message after creation; that's what kicks the agent off.
 
 ```bash
-# 1. Create the session
+# 1. Create the session — provisions a workspace and clones the repo.
 curl -sS -X POST http://localhost:8000/v1/sessions \
   -H 'Content-Type: application/json' \
   -d '{
-        "repo_url": "https://github.com/octocat/Hello-World",
-        "prompt": "Summarize the README in one sentence.",
-        "agent": "claude_cli"
+        "agent": {
+          "name": "my-agent",
+          "provider": "claude_cli"
+        },
+        "resources": [
+          {
+            "type": "github_repository",
+            "url": "https://github.com/octocat/Hello-World.git",
+            "mount_path": "/workspace/repo",
+            "authorization_token": "ghp_xxx",
+            "checkout": {"type": "branch", "name": "main"}
+          }
+        ]
       }'
-# → { "session_id": "...", "status": "running", ... }
+# → { "session_id": "sesn_…", "status": "created", "workspace": "…", "resources_mounted": […] }
 
-# 2. Stream the cross-session event log (Last-Event-ID resumable)
+# 2. Send the first user message — this launches the external agent.
+curl -sS -X POST http://localhost:8000/v1/sessions/sesn_XXX/messages \
+  -H 'Content-Type: application/json' \
+  -d '{"content": "Summarize the README in one sentence."}'
+
+# 3. Stream the cross-session event log (Last-Event-ID resumable per ADR-0005).
 curl -N http://localhost:8000/v1/events/stream
+# Optional filters: ?session_id=sesn_XXX&kind=agent.output
 ```
 
-Each event on the stream is a JSON object with `event_id` (UUIDv7), `session_id`, `type`, and `data`. Representative types:
+Each frame on the stream is `id: <uuidv7>\ndata: {…}\n\n` where the JSON object carries `event_id`, `session_id`, `type`, `data`, and `timestamp`. Representative types Mad emits:
 
 | Type | Emitted when |
 |---|---|
-| `session.created` | Session row written, workspace provisioned |
+| `session.created` | Session row written and workspace provisioned |
 | `agent.output` | One line of stdout from the external agent |
 | `session.status_idle` | Agent exited 0 |
 | `session.error` | Agent exited non-zero or timed out |
 
-For private repos, pass `github_token` in the create-session body. Mad uses it once for `git clone` and immediately strips it from the remote URL ([hard rule 2](CLAUDE.md)).
+For private repos, set `authorization_token` on the `github_repository` resource. Mad uses it once for `git clone` and immediately strips it from the remote URL ([hard rule 2](CLAUDE.md)). For historical replay outside SSE, `GET /v1/events?after_event_id=…&limit=…` returns the same shape with a `next_cursor`.
 
 ## Project structure
 
