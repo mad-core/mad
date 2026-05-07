@@ -16,6 +16,7 @@ from mad.adapters.outbound.persistence.jsonl_session_repository import (
 from mad.adapters.outbound.persistence.local_workspace_provisioner import (
     LocalWorkspaceProvisioner,
 )
+from mad.core.events.domain.event import Event
 from mad.core.events.emitter import EventEmitter
 from mad.core.events.ports.event_bus import EventBus
 from mad.core.events.ports.event_log_query import EventLogQuery
@@ -33,14 +34,32 @@ def build_dependencies() -> tuple[
     EventEmitter,
 ]:
     """Return the production defaults for every injected port."""
+    store = SessionStore()
     repo = JsonlSessionRepository()
     bus = InMemoryEventBus()
-    emitter = EventEmitter(store=repo, bus=bus)
+    emitter = EventEmitter(store=repo, bus=bus, on_emit=touch_session(store))
     return (
-        SessionStore(),
+        store,
         repo,
         LocalWorkspaceProvisioner(),
         bus,
         JsonlEventLogQuery(),
         emitter,
     )
+
+
+def touch_session(store: SessionStore):
+    """Return an ``on_emit`` hook that bumps ``Session.updated_at`` for the
+    in-memory entity matching ``event.session_id`` (if any).
+
+    Sessions only present on disk (rehydrated lazily by use cases) derive
+    their ``updated_at`` from the persisted event stream, not from this
+    hook — so missing entries here are not a bug.
+    """
+
+    def _on_emit(event: Event) -> None:
+        session = store.sessions.get(event.session_id)
+        if session is not None:
+            session.touch(event.timestamp)
+
+    return _on_emit

@@ -6,6 +6,7 @@ is not in the in-memory index (implements hard rule 6 — JSONL as source of tru
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from mad.core.sessions.domain.entities.session import Session
@@ -20,6 +21,8 @@ class GetSessionOutput:
     status: str
     workspace: str
     events: list[dict[str, Any]]
+    created_at: datetime
+    updated_at: datetime
 
 
 class GetSessionUseCase:
@@ -37,11 +40,9 @@ class GetSessionUseCase:
         session = self._sessions.get(session_id)
 
         if session is None:
-            # Attempt JSONL rehydration (hard rule 6)
             if not self._repo.exists(session_id):
                 raise SessionNotFound(session_id)
             session = rehydrate_from_events(session_id, self._repo.read_events(session_id))
-            # Cache in memory for subsequent requests
             self._sessions[session_id] = session
 
         events = self._repo.read_events(session_id)
@@ -50,4 +51,6 @@ class GetSessionUseCase:
             status=session.status,
             workspace=session.workspace,
             events=events,
+            created_at=session.created_at,
+            updated_at=session.updated_at,
         )

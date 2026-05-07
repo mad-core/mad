@@ -193,7 +193,7 @@ def test_token_not_in_session_response(client: TestClient, bare_repo: Path) -> N
 
 
 def test_token_not_in_stderr_of_launcher(
-    client: TestClient, fake_launcher, bare_repo: Path
+    client: TestClient, fake_launcher, bare_repo: Path, tmp_sessions_dir: Path
 ) -> None:
     """FakeLauncher emits an agent.output event whose data contains the token;
     the JSONL persisted must NOT contain the token literal. (Hard rule 2)
@@ -230,7 +230,7 @@ def test_token_not_in_stderr_of_launcher(
 
     # Poll on state, not time (rule 7): wait until the agent completes
     # and the launcher's agent.output line lands in the log.
-    log_path = Path("sessions") / f"{session_id}.jsonl"
+    log_path = tmp_sessions_dir / f"{session_id}.jsonl"
     deadline = time.monotonic() + 5.0
     log_contents = ""
     while time.monotonic() < deadline:

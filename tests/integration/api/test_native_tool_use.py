@@ -18,7 +18,7 @@ from fastapi.testclient import TestClient
 
 @pytest.mark.smoke
 def test_launcher_output_lines_emitted_as_agent_output(
-    client: TestClient, fake_launcher, bare_repo: Path
+    client: TestClient, fake_launcher, bare_repo: Path, tmp_sessions_dir: Path
 ) -> None:
     """agent.output lines from the launcher are streamed as-is; agent.tool_use MUST NOT appear.
 
@@ -60,7 +60,7 @@ def test_launcher_output_lines_emitted_as_agent_output(
 
     # Poll on state, not time (rule 7): wait until the launcher completes
     # and session.status_idle is appended to the log.
-    log_path = Path("sessions") / f"{session_id}.jsonl"
+    log_path = tmp_sessions_dir / f"{session_id}.jsonl"
     deadline = time.monotonic() + 5.0
     lines: list[dict] = []
     while time.monotonic() < deadline:

@@ -13,7 +13,7 @@ from mad.core.sessions import SessionStore
 
 
 def test_get_session_reads_events_from_jsonl_after_restart(
-    fake_launcher, session_payload: dict, tmp_sessions_dir
+    fake_launcher, session_payload: dict, tmp_sessions_dir, tmp_workspaces_dir
 ) -> None:
     """Create a session, discard the in-memory SessionStore, build a fresh app
     pointing at the same sessions/ directory, and verify that GET /v1/sessions/{id}

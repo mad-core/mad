@@ -8,7 +8,15 @@ or deletion.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any
+
+
+_SENTINEL = datetime.fromtimestamp(0, tz=UTC)
+
+
+def _utc_now() -> datetime:
+    return datetime.now(UTC)
 
 
 @dataclass
@@ -25,43 +33,52 @@ class Session:
     agent: dict[str, Any]
     workspace: str
     status: str = "created"
-    # Branch the workspace is pinned to at provisioning time. When None the
-    # provisioner leaves the clone on whatever HEAD git produced (remote default).
     base_branch: str | None = None
-    # Opaque dict of mounted resource descriptors for the HTTP response.
     resources_mounted: list[dict[str, Any]] = field(default_factory=list)
-    # Cached HTTP response for idempotency
     response: dict[str, Any] = field(default_factory=dict)
-    # Sensitive tokens collected at creation time — used for redaction in agent output.
-    # These are NEVER written to the JSONL log (hard rule 2).
     tokens_to_redact: list[str] = field(default_factory=list, repr=False)
+    created_at: datetime = field(default_factory=_utc_now)
+    updated_at: datetime = _SENTINEL
+
+    def __post_init__(self) -> None:
+        # Align updated_at with created_at when the caller leaves it at
+        # default — separate ``default_factory`` calls would otherwise
+        # produce two ``now()`` values that differ in microseconds.
+        if self.updated_at is _SENTINEL:
+            self.updated_at = self.created_at
 
     # ---------------------------------------------------------------------------
     # Domain transitions
     # ---------------------------------------------------------------------------
 
     def mark_running(self) -> None:
-        """Transition to running state (agent launched)."""
         self.status = "running"
 
     def mark_idle(self, stop_reason: str | None = None) -> None:
-        """Transition to idle state (agent finished successfully)."""
         self.status = "idle"
 
     def mark_error(self, reason: str | None = None) -> None:
-        """Transition to error state."""
         self.status = "error"
 
     def mark_deleted(self) -> None:
-        """Transition to deleted state."""
         self.status = "deleted"
+
+    def touch(self, timestamp: datetime) -> None:
+        """Bump ``updated_at`` to ``timestamp`` if it is more recent.
+
+        Out-of-order events do not pull the timestamp backwards; the JSONL
+        log can replay older events into a live entity during rehydration.
+        """
+        if timestamp.tzinfo is None:
+            timestamp = timestamp.replace(tzinfo=UTC)
+        if timestamp > self.updated_at:
+            self.updated_at = timestamp
 
     # ---------------------------------------------------------------------------
     # Serialization helpers (for SessionStore compatibility)
     # ---------------------------------------------------------------------------
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize to the dict format used by SessionStore."""
         return {
             "session_id": self.session_id,
             "agent": self.agent,
@@ -70,11 +87,16 @@ class Session:
             "base_branch": self.base_branch,
             "resources_mounted": self.resources_mounted,
             "response": self.response,
+            "created_at": self.created_at.isoformat(),
+            "updated_at": self.updated_at.isoformat(),
         }
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> Session:
-        """Reconstruct from a dict (e.g. from SessionStore or JSONL metadata)."""
+        created_raw = d.get("created_at")
+        updated_raw = d.get("updated_at")
+        created_at = _parse_iso(created_raw) if created_raw else _utc_now()
+        updated_at = _parse_iso(updated_raw) if updated_raw else created_at
         return cls(
             session_id=d["session_id"],
             agent=d.get("agent", {}),
@@ -83,4 +105,13 @@ class Session:
             base_branch=d.get("base_branch"),
             resources_mounted=d.get("resources_mounted", []),
             response=d.get("response", {}),
+            created_at=created_at,
+            updated_at=updated_at,
         )
+
+
+def _parse_iso(value: str) -> datetime:
+    ts = datetime.fromisoformat(value)
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=UTC)
+    return ts

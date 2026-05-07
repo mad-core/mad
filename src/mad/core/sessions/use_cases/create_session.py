@@ -76,7 +76,7 @@ class CreateSessionUseCase:
         session_id = "sesn_" + uuid.uuid4().hex[:12]
         workspace: Path = self._provisioner.create(session_id)
 
-        await self._emitter.emit(
+        created_event = await self._emitter.emit(
             session_id, "session.created", {"agent": payload.agent["name"]}
         )
 
@@ -135,6 +135,8 @@ class CreateSessionUseCase:
             resources_mounted=resources_mounted,
             response=response,
             tokens_to_redact=tokens_to_redact,
+            created_at=created_event.timestamp,
+            updated_at=created_event.timestamp,
         )
 
         self._sessions[session_id] = session

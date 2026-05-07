@@ -7,6 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import mad.adapters.outbound.persistence.jsonl_session_repository as _adapter_log
+import mad.adapters.outbound.persistence.local_workspace_provisioner as _adapter_workspaces
 from mad.adapters.inbound.http import create_app
 from support.launchers import ScriptedLauncher
 
@@ -22,7 +23,11 @@ def fake_launcher() -> ScriptedLauncher:
 
 
 @pytest.fixture
-def client(fake_launcher: ScriptedLauncher) -> TestClient:
+def client(
+    fake_launcher: ScriptedLauncher,
+    tmp_sessions_dir: Path,
+    tmp_workspaces_dir: Path,
+) -> TestClient:
     return TestClient(create_app(launcher_factory=lambda name: fake_launcher))
 
 
@@ -97,3 +102,22 @@ def tmp_sessions_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     sessions.mkdir()
     monkeypatch.setattr(_adapter_log, "SESSIONS_DIR", sessions)
     return sessions
+
+
+@pytest.fixture
+def tmp_workspaces_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Redirect ``LocalWorkspaceProvisioner`` workspaces into ``tmp_path``.
+
+    The provisioner builds workspace paths via ``workspace_path(session_id)``
+    which resolves under ``tempfile.gettempdir()``. Without this fixture
+    every integration test leaks a ``mad_<session_id>/`` directory into
+    ``$TMPDIR`` that ``pytest`` never cleans up.
+    """
+    workspaces = tmp_path / "workspaces"
+    workspaces.mkdir()
+    monkeypatch.setattr(
+        _adapter_workspaces,
+        "workspace_path",
+        lambda session_id: workspaces / f"mad_{session_id}",
+    )
+    return workspaces

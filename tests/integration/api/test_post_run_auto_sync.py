@@ -167,7 +167,7 @@ def test_post_run_auto_sync_invokes_second_launcher_run(
 
 
 def test_post_run_auto_sync_uses_base_branch_in_prompt(
-    repo_with_branches: Path, tmp_sessions_dir: Path
+    repo_with_branches: Path, tmp_sessions_dir: Path, tmp_workspaces_dir: Path
 ) -> None:
     """The auto-sync prompt must reference the session's base_branch."""
     from support.launchers import ScriptedLauncher
@@ -209,7 +209,7 @@ def test_post_run_auto_sync_uses_base_branch_in_prompt(
 
 
 def test_post_run_auto_sync_runs_even_when_primary_fails(
-    client: TestClient, fake_launcher, session_payload: dict
+    client: TestClient, fake_launcher, session_payload: dict, tmp_sessions_dir: Path
 ) -> None:
     """Auto-sync MUST fire even after the primary run reports session.error."""
     fake_launcher.script(
@@ -231,7 +231,7 @@ def test_post_run_auto_sync_runs_even_when_primary_fails(
 
     assert len(fake_launcher.calls) == 2
 
-    log_path = Path("sessions") / f"{session_id}.jsonl"
+    log_path = tmp_sessions_dir / f"{session_id}.jsonl"
     lines = [json.loads(ln) for ln in log_path.read_text().splitlines() if ln.strip()]
     types = [e["type"] for e in lines]
     assert types.count("session.error") >= 1

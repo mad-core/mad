@@ -11,9 +11,10 @@ Business logic lives in mad.core.sessions.use_cases.*.
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from datetime import UTC, datetime
+from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Header, Request
+from fastapi import APIRouter, Header, Query, Request
 from pydantic import BaseModel, Field
 
 from mad.core.sessions import SessionStore
@@ -24,7 +25,10 @@ from mad.core.sessions.use_cases.create_session import (
 )
 from mad.core.sessions.use_cases.delete_session import DeleteSessionUseCase
 from mad.core.sessions.use_cases.get_session import GetSessionUseCase
-from mad.core.sessions.use_cases.list_sessions import ListSessionsUseCase
+from mad.core.sessions.use_cases.list_sessions import (
+    ListSessionsInput,
+    ListSessionsUseCase,
+)
 from mad.core.sessions.use_cases.send_user_message import (
     SendUserMessageInput,
     SendUserMessageUseCase,
@@ -64,6 +68,39 @@ class CreateSessionRequest(BaseModel):
 
 class SendMessageRequest(BaseModel):
     content: str
+
+
+class SessionSummaryResponse(BaseModel):
+    session_id: str
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class SessionDetailResponse(BaseModel):
+    session_id: str
+    status: str
+    workspace: str
+    events: list[dict[str, Any]]
+    created_at: datetime
+    updated_at: datetime
+
+
+def _as_utc(value: datetime | None) -> datetime | None:
+    """Normalize a query datetime to tz-aware UTC.
+
+    FastAPI accepts both date-only (``2026-05-01``) and naive datetime
+    (``2026-05-01T00:00:00``) values for a ``datetime`` query param. Both
+    arrive without ``tzinfo``; comparing them against the tz-aware
+    ``Session.created_at`` raises ``TypeError`` ("can't compare offset-naive
+    and offset-aware datetimes"), surfacing as a 500. We assume UTC for
+    naive inputs — the documented timezone of the persisted timestamps.
+    """
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value
 
 
 def _store(request: Request) -> SessionStore:
@@ -135,8 +172,8 @@ async def send_message(session_id: str, payload: SendMessageRequest, request: Re
     return {"status": "accepted"}
 
 
-@router.get("/v1/sessions/{session_id}")
-async def get_session(session_id: str, request: Request) -> dict:
+@router.get("/v1/sessions/{session_id}", response_model=SessionDetailResponse)
+async def get_session(session_id: str, request: Request) -> SessionDetailResponse:
     store = _store(request)
 
     use_case = GetSessionUseCase(
@@ -145,24 +182,51 @@ async def get_session(session_id: str, request: Request) -> dict:
     )
     output = use_case.execute(session_id)
 
-    return {
-        "session_id": output.session_id,
-        "status": output.status,
-        "workspace": output.workspace,
-        "events": output.events,
-    }
+    return SessionDetailResponse(
+        session_id=output.session_id,
+        status=output.status,
+        workspace=output.workspace,
+        events=output.events,
+        created_at=output.created_at,
+        updated_at=output.updated_at,
+    )
 
 
-@router.get("/v1/sessions")
-async def list_sessions(request: Request) -> list:
+@router.get("/v1/sessions", response_model=list[SessionSummaryResponse])
+async def list_sessions(
+    request: Request,
+    created_after: Annotated[datetime | None, Query()] = None,
+    created_before: Annotated[datetime | None, Query()] = None,
+    updated_after: Annotated[datetime | None, Query()] = None,
+    updated_before: Annotated[datetime | None, Query()] = None,
+    order_by: Annotated[Literal["created_at", "updated_at"] | None, Query()] = None,
+    order: Annotated[Literal["asc", "desc"], Query()] = "asc",
+) -> list[SessionSummaryResponse]:
     store = _store(request)
 
     use_case = ListSessionsUseCase(
         sessions_index=store.sessions,
         repo=_repo(request),
     )
-    summaries = use_case.execute()
-    return [{"session_id": s.session_id, "status": s.status} for s in summaries]
+    output = use_case.execute(
+        ListSessionsInput(
+            created_after=_as_utc(created_after),
+            created_before=_as_utc(created_before),
+            updated_after=_as_utc(updated_after),
+            updated_before=_as_utc(updated_before),
+            order_by=order_by,
+            order=order,
+        )
+    )
+    return [
+        SessionSummaryResponse(
+            session_id=s.session_id,
+            status=s.status,
+            created_at=s.created_at,
+            updated_at=s.updated_at,
+        )
+        for s in output.sessions
+    ]
 
 
 @router.delete("/v1/sessions/{session_id}")

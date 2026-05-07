@@ -289,18 +289,18 @@ def test_mvp_04_get_unknown_session_returns_404(client: TestClient) -> None:
 
 
 def test_mvp_04b_jsonl_log_is_created_on_session_start(
-    client: TestClient, session_payload: dict
+    client: TestClient, session_payload: dict, tmp_sessions_dir: Path
 ) -> None:
     """A JSONL log file at sessions/{session_id}.jsonl must exist after session creation."""
     r = client.post("/v1/sessions", json=session_payload)
     session_id = r.json()["session_id"]
 
-    log_path = Path("sessions") / f"{session_id}.jsonl"
+    log_path = tmp_sessions_dir / f"{session_id}.jsonl"
     assert log_path.exists(), f"session log must exist at {log_path}"
 
 
 def test_mvp_04b_jsonl_log_records_agent_events(
-    client: TestClient, fake_launcher, session_payload: dict
+    client: TestClient, fake_launcher, session_payload: dict, tmp_sessions_dir: Path
 ) -> None:
     """After the agent finishes, the JSONL log must contain session.created and user.message."""
     fake_launcher.script([[{"type": "session.status_idle", "stop_reason": "end_turn"}]])
@@ -311,7 +311,7 @@ def test_mvp_04b_jsonl_log_records_agent_events(
         json={"content": "record me"},
     )
 
-    log_path = Path("sessions") / f"{session_id}.jsonl"
+    log_path = tmp_sessions_dir / f"{session_id}.jsonl"
     assert log_path.exists()
     lines = [json.loads(ln) for ln in log_path.read_text().splitlines() if ln.strip()]
     event_types = {e["type"] for e in lines}
@@ -321,12 +321,12 @@ def test_mvp_04b_jsonl_log_records_agent_events(
 
 @pytest.mark.smoke
 def test_mvp_04b_jsonl_log_each_line_is_valid_json(
-    client: TestClient, session_payload: dict
+    client: TestClient, session_payload: dict, tmp_sessions_dir: Path
 ) -> None:
     """Every line in the JSONL log must be valid JSON with a 'type' field."""
     r = client.post("/v1/sessions", json=session_payload)
     session_id = r.json()["session_id"]
-    log_path = Path("sessions") / f"{session_id}.jsonl"
+    log_path = tmp_sessions_dir / f"{session_id}.jsonl"
     for i, line in enumerate(log_path.read_text().splitlines()):
         if not line.strip():
             continue
@@ -402,7 +402,7 @@ def test_mvp_06_resume_session_with_new_message(
 
 @pytest.mark.smoke
 def test_mvp_06b_resumed_session_log_contains_both_turns(
-    client: TestClient, fake_launcher, session_payload: dict
+    client: TestClient, fake_launcher, session_payload: dict, tmp_sessions_dir: Path
 ) -> None:
     """The JSONL log must record user.message events from both turns after a resume."""
     fake_launcher.script(
@@ -422,7 +422,7 @@ def test_mvp_06b_resumed_session_log_contains_both_turns(
         json={"content": "beta task"},
     )
 
-    log_path = Path("sessions") / f"{session_id}.jsonl"
+    log_path = tmp_sessions_dir / f"{session_id}.jsonl"
     lines = [json.loads(ln) for ln in log_path.read_text().splitlines() if ln.strip()]
     user_messages = [e for e in lines if e.get("type") == "user.message"]
     contents = [e.get("content", "") for e in user_messages]
@@ -437,7 +437,7 @@ def test_mvp_06b_resumed_session_log_contains_both_turns(
 
 
 def test_mvp_07_delete_cleans_workspace_preserves_log(
-    client: TestClient, session_payload: dict
+    client: TestClient, session_payload: dict, tmp_sessions_dir: Path
 ) -> None:
     """DELETE must remove the workspace directory and keep the JSONL log."""
     r = client.post("/v1/sessions", json=session_payload)
@@ -450,7 +450,7 @@ def test_mvp_07_delete_cleans_workspace_preserves_log(
     assert r.status_code == 200
     assert not workspace.exists(), "workspace directory must be removed after DELETE"
 
-    log_path = Path("sessions") / f"{session_id}.jsonl"
+    log_path = tmp_sessions_dir / f"{session_id}.jsonl"
     assert log_path.exists(), "session log must be preserved after DELETE"
 
 

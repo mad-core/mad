@@ -26,7 +26,7 @@ from mad.adapters.outbound.persistence.jsonl_session_repository import (
 
 
 @pytest.fixture
-def http_client(tmp_sessions_dir: Path) -> TestClient:
+def http_client(tmp_sessions_dir: Path, tmp_workspaces_dir: Path) -> TestClient:
     return TestClient(create_app())
 
 
