@@ -3,12 +3,28 @@ name: Release
 on:
   push:
     branches: [main]
+    # Path-gate the release trigger: bytes that never reach a PyPI consumer
+    # (skills, docs, tests, CI workflows themselves, the Makefile, CLAUDE.md)
+    # must not move the version. See CLAUDE.md hard rule 12.
+    paths:
+      - "src/mad/**"
+      - "pyproject.toml"
+      - "README.md"
+      - "LICENSE"
   workflow_dispatch:
     inputs:
       manual_publish:
         description: "Build current tree and publish to PyPI (skips semantic-release)"
         type: boolean
         default: false
+      release_kind:
+        description: "Bump kind for the semantic-release run (auto = derive from commits)"
+        type: choice
+        default: auto
+        options:
+          - auto
+          - minor
+          - major
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -42,7 +58,12 @@ jobs:
 
   release:
     name: Semantic release
-    if: github.event_name == 'push'
+    # Run on every push to `main` that touches a version-relevant path (above),
+    # and on `workflow_dispatch` whenever the operator did NOT pick the
+    # `manual_publish` escape hatch (that path goes through `manual-publish-pypi`).
+    if: |
+      github.event_name == 'push'
+      || (github.event_name == 'workflow_dispatch' && !inputs.manual_publish)
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -74,6 +95,12 @@ jobs:
         uses: python-semantic-release/python-semantic-release@v9
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          # `release_kind` only exists on `workflow_dispatch`; on `push` the
+          # expression evaluates to '' and `force` is a no-op (auto behavior).
+          # `auto` is also mapped to '' so the operator can pick it explicitly.
+          force: >-
+            ${{ (github.event_name == 'workflow_dispatch' && inputs.release_kind != 'auto')
+                && inputs.release_kind || '' }}
 
       - name: Upload dist artifacts
         if: steps.semrel.outputs.released == 'true'

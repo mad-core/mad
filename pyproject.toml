@@ -214,6 +214,29 @@ commit_parser = "conventional"
 major_on_zero = false
 tag_format = "v{version}"
 
+# Versioning is for the package, not the repo (CLAUDE.md hard rule 12).
+# Demote `feat` to a patch tag so every conventional commit auto-publishes a
+# patch on `0.x`; minor and major bumps require an explicit signal —
+# `BREAKING CHANGE:` / `feat!:` footers, or a `workflow_dispatch` run with
+# `release_kind: minor|major`. `allowed_tags` mirrors Conventional Commits so
+# `refactor` / `chore` / `docs` / `style` / `test` / `build` / `ci` are still
+# parsed (and excluded from the changelog by `exclude_commit_patterns` below).
+[tool.semantic_release.commit_parser_options]
+minor_tags = []
+patch_tags = ["feat", "fix", "perf"]
+allowed_tags = [
+  "feat",
+  "fix",
+  "perf",
+  "refactor",
+  "chore",
+  "docs",
+  "style",
+  "test",
+  "build",
+  "ci",
+]
+
 [tool.semantic_release.changelog]
 changelog_file = "CHANGELOG.md"
 # Custom Jinja templates: render only `- <subject> ([hash](link))` per entry,

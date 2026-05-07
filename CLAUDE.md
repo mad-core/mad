@@ -30,6 +30,21 @@ Project conventions and hard rules for anyone (human or Claude) working in this 
 
 11. **`EventEmitter.emit()` is the single write path to the session event log.** Use cases receive `EventEmitter` as an injected dependency and call `emit()`. They MUST NOT call `SessionRepository.append_event` or `EventBus.publish` directly. Outbound adapters (e.g. launcher callback) receive an `emit` callable supplied by the use case; inbound adapters (SSE, query) only subscribe or query — they NEVER write. Rationale and full scope live in [ADR-0007](docs/adr/0007-single-write-gateway-event-emitter.md).
 
+12. **Versioning is for the package, not the repo.** `feat`/`fix`/`perf` apply only to changes visible to a `mad-bros` consumer (HTTP, SSE, CLI, config, agents, deps). Work inside `core/` and internal bounded contexts ships as `refactor`/`chore`/`test`. Minor and major bumps are always deliberate (footer `BREAKING CHANGE:` or `workflow_dispatch`), never auto-derived from counting `feat`s. The pipeline enforces this in three places: `pyproject.toml` demotes `feat` to a patch tag, `.github/workflows/release.yml` path-gates the release trigger so only changes under `src/mad/**`, `pyproject.toml`, `README.md`, or `LICENSE` move the version, and the same workflow exposes a `release_kind: { auto, minor, major }` `workflow_dispatch` input for deliberate milestones.
+
+   **Public scope set** for `feat`/`fix`/`perf` (the only types that are eligible to land in the consumer-facing CHANGELOG):
+
+   | Scope | Surface |
+   |---|---|
+   | `http` | HTTP routes, request/response shapes, OpenAPI |
+   | `sse` | `/v1/events/stream` and other server-sent event surfaces |
+   | `cli` | `mad` console script and its subcommands |
+   | `config` | Environment variables, `pyproject.toml` settings the operator tunes |
+   | `agents` | `AgentLauncher` providers exposed by `factory.get_launcher` |
+   | `deps` | Runtime dependency bumps a consumer would inherit |
+
+   Internal bounded contexts (`core`, `events`, `sessions`, `domain`, `ports`) are forbidden as `feat`/`fix`/`perf` scopes — they ship as `refactor:`, `chore:`, or `test:`, which are filtered from the CHANGELOG by the `exclude_commit_patterns` introduced in #18.
+
 ## Commits and PRs
 
 | Command | Purpose |
