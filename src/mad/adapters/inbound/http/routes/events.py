@@ -41,6 +41,23 @@ from mad.core.events.use_cases.stream_events import (
 router = APIRouter(tags=["events"])
 
 
+def _parse_last_event_id(header: str | None) -> UUID | None:
+    """Tolerant ``Last-Event-ID`` parser.
+
+    Returns the parsed UUID, or ``None`` for missing / empty / malformed
+    values. SSE clients (browsers, Postman) sometimes attach this header
+    automatically on first connect with an empty or stale value; refusing
+    the connection in that case would make the endpoint unusable from
+    those clients without manual header surgery.
+    """
+    if not header:
+        return None
+    try:
+        return UUID(header)
+    except ValueError:
+        return None
+
+
 def _bus(request: Request) -> EventBus:
     return request.app.state.event_bus
 
@@ -94,7 +111,7 @@ async def stream_events(
     agent: Annotated[str | None, Query()] = None,
     last_event_id_header: Annotated[str | None, Header(alias="Last-Event-ID")] = None,
 ) -> StreamingResponse:
-    parsed_last = UUID(last_event_id_header) if last_event_id_header else None
+    parsed_last = _parse_last_event_id(last_event_id_header)
     use_case = StreamEventsUseCase(bus=_bus(request), log=_log(request))
 
     payload = StreamEventsInput(

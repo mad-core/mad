@@ -11,7 +11,10 @@ Business logic lives in mad.core.sessions.use_cases.*.
 
 from __future__ import annotations
 
+from typing import Any, Literal
+
 from fastapi import APIRouter, Header, Request
+from pydantic import BaseModel, Field
 
 from mad.core.sessions import SessionStore
 from mad.core.sessions.use_cases.create_session import (
@@ -30,6 +33,39 @@ from mad.core.sessions.use_cases.send_user_message import (
 router = APIRouter(tags=["sessions"])
 
 
+class AgentSpec(BaseModel):
+    model_config = {"extra": "allow"}
+
+    name: str = Field(..., description="Human-readable agent name.")
+    provider: str = Field(
+        ..., description="Launcher key, e.g. 'claude_cli'. Used to resolve AgentLauncher."
+    )
+
+
+class ResourceCheckout(BaseModel):
+    branch: str | None = None
+    ref: str | None = None
+
+
+class ResourceRequest(BaseModel):
+    type: Literal["github_repository", "file"]
+    mount_path: str
+    url: str = ""
+    authorization_token: str | None = None
+    checkout: ResourceCheckout | dict[str, Any] | None = None
+    content: str = ""
+
+
+class CreateSessionRequest(BaseModel):
+    agent: AgentSpec
+    resources: list[ResourceRequest] = Field(default_factory=list)
+    base_branch: str | None = None
+
+
+class SendMessageRequest(BaseModel):
+    content: str
+
+
 def _store(request: Request) -> SessionStore:
     return request.app.state.store
 
@@ -44,25 +80,26 @@ def _provisioner(request: Request):
 
 @router.post("/v1/sessions")
 async def create_session(
+    payload: CreateSessionRequest,
     request: Request,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> dict:
     store = _store(request)
-    body = await request.json()
-    agent = body["agent"]
-    raw_resources = body.get("resources", [])
-    base_branch = body.get("base_branch")
 
     resource_specs = [
         ResourceSpec(
-            type=r["type"],
-            mount_path=r["mount_path"],
-            url=r.get("url", ""),
-            authorization_token=r.get("authorization_token"),
-            checkout=r.get("checkout"),
-            content=r.get("content", ""),
+            type=r.type,
+            mount_path=r.mount_path,
+            url=r.url,
+            authorization_token=r.authorization_token,
+            checkout=(
+                r.checkout.model_dump(exclude_none=True)
+                if isinstance(r.checkout, ResourceCheckout)
+                else r.checkout
+            ),
+            content=r.content,
         )
-        for r in raw_resources
+        for r in payload.resources
     ]
 
     use_case = CreateSessionUseCase(
@@ -74,10 +111,10 @@ async def create_session(
 
     output = await use_case.execute(
         CreateSessionInput(
-            agent=agent,
+            agent=payload.agent.model_dump(),
             resources=resource_specs,
             idempotency_key=idempotency_key,
-            base_branch=base_branch,
+            base_branch=payload.base_branch,
         )
     )
 
@@ -85,17 +122,17 @@ async def create_session(
 
 
 @router.post("/v1/sessions/{session_id}/messages")
-async def send_message(session_id: str, request: Request) -> dict:
+async def send_message(
+    session_id: str, payload: SendMessageRequest, request: Request
+) -> dict:
     store = _store(request)
-    body = await request.json()
-    content = body["content"]
 
     use_case = SendUserMessageUseCase(
         sessions_index=store.sessions,
         get_launcher=request.app.state.launcher_factory,
         emitter=request.app.state.event_emitter,
     )
-    use_case.execute(SendUserMessageInput(session_id=session_id, content=content))
+    use_case.execute(SendUserMessageInput(session_id=session_id, content=payload.content))
 
     return {"status": "accepted"}
 

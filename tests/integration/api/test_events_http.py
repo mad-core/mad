@@ -138,12 +138,18 @@ def test_get_events_rejects_invalid_uuid_cursor(http_client: TestClient) -> None
 # is covered below by the invalid-UUID path.
 
 
-def test_stream_route_rejects_invalid_last_event_id(http_client: TestClient) -> None:
-    """The route parses ``Last-Event-ID`` to a UUID before opening the
-    stream; an invalid value short-circuits with a 400 via the existing
-    ValueError handler in create_app."""
-    response = http_client.get(
-        "/v1/events/stream",
-        headers={"Last-Event-ID": "not-a-uuid"},
-    )
-    assert response.status_code == 400
+def test_parse_last_event_id_tolerates_missing_and_invalid() -> None:
+    """An invalid ``Last-Event-ID`` (e.g. empty header sent by some SSE
+    clients on first connect) must NOT abort the connection — it is
+    treated as no catch-up. Tested at helper level because the live
+    stream cannot be cleanly aborted via TestClient once headers are
+    flushed; the route is a one-liner over this helper."""
+    from uuid import uuid4
+
+    from mad.adapters.inbound.http.routes.events import _parse_last_event_id
+
+    assert _parse_last_event_id(None) is None
+    assert _parse_last_event_id("") is None
+    assert _parse_last_event_id("not-a-uuid") is None
+    valid = uuid4()
+    assert _parse_last_event_id(str(valid)) == valid
