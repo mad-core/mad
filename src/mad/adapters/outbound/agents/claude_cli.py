@@ -45,6 +45,7 @@ def _subprocess_env() -> dict[str, str]:
 class ClaudeCLIProvider:
     async def run(
         self,
+        session_id: str,
         prompt: str,
         workspace: Path,
         emit: Callable[[str, dict | None], Coroutine[Any, Any, None]],
