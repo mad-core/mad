@@ -8,7 +8,7 @@ ADR-0001 covers the high-level testing strategy (unit / integration / e2e split)
 
 ---
 
-## The seven rules
+## The eight rules
 
 ### 1. Every endpoint test has a negative twin
 
@@ -105,25 +105,26 @@ def test_post_sessions_declares_body_schema(http_client):
     assert "agent" in component["required"]
 ```
 
-### 6. SSE / streaming endpoints — never test only the helper
+### 6. SSE / streaming endpoints — never test only the helper, never hit the live infinite stream
 
-If a route does `StreamingResponse`, test the route, not just the parsing helper. Use `httpx.AsyncClient` with `async with client.stream(...)`, set a small timeout, read the first frame, validate format. The fact that `TestClient` deadlocks on long-lived streams is an invitation to switch tools, not skip the test.
+If a route does `StreamingResponse`, test the route, not just the parsing helper. But **do not connect a test client to a server-side generator that yields forever** — `httpx.AsyncClient.stream(...)` against an unbounded `StreamingResponse` over `ASGITransport` will hang on close, even with `timeout=`, because the ASGI app does not honor the disconnect promptly. We have already burned a CI run on this.
 
-The previous `test_parse_last_event_id_tolerates_missing_and_invalid` passes today, but if the route stopped calling the helper tomorrow, the test wouldn't notice. A test against the live endpoint catches that.
+The acceptable patterns, in order of preference:
 
-**Reference test (replace the helper-only test):**
+1. **Inject a bounded source.** Replace the route's event bus / iterator with a fake that yields a finite sequence and then completes. Connect, read all frames, assert. The route exits naturally.
+2. **Read one frame, then close, with a hard `@pytest.mark.timeout`.** Only use this if the route emits at least one frame immediately. Set `@pytest.mark.timeout(5)` so a regression in the close path fails fast instead of hanging.
+3. **Helper-only test, *plus* a route smoke test that does not stream.** If the route opens a long-lived stream by design and you cannot bound it from the test, keep the helper unit test for parsing logic AND add a route-level test that asserts wiring (e.g., `app.routes` contains the path, or call the route function directly with a scoped fake) — never `c.stream(...)` against the live infinite generator.
+
 ```python
-async def test_stream_endpoint_tolerates_invalid_last_event_id(app):
-    transport = httpx.ASGITransport(app=app)
+# Pattern 1 — bounded source (preferred)
+async def test_stream_emits_event_for_invalid_last_event_id(app_with_bounded_bus):
+    transport = httpx.ASGITransport(app=app_with_bounded_bus)
     async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
-        async with c.stream(
-            "GET", "/v1/events/stream",
-            headers={"Last-Event-ID": "not-a-uuid"},
-            timeout=2.0,
-        ) as r:
+        async with c.stream("GET", "/v1/events/stream",
+                            headers={"Last-Event-ID": "not-a-uuid"}) as r:
             assert r.status_code == 200
-            assert r.headers["content-type"].startswith("text/event-stream")
-            # Don't consume body; close cancels the generator.
+            frames = [chunk async for chunk in r.aiter_text()]
+    assert any("event: " in f for f in frames)
 ```
 
 ### 7. Polling waits on state, never on time
@@ -153,6 +154,28 @@ assert "session.status_idle" in [e["type"] for e in events], (
 
 The `else: pytest.fail(...)` after a `while` — or asserting outcome explicitly with a descriptive message — is what turns flakes into actionable failures.
 
+### 8. Every test MUST terminate — no infinite waits, no unbounded loops
+
+A test that hangs is worse than a test that fails: it freezes the suite, blocks CI, and burns developer time. The repo enforces this with `pytest-timeout` (`timeout = 15`, `timeout_method = "thread"` in `pyproject.toml`) — any test that exceeds 15 s real time is killed and reported as a failure.
+
+This is the safety net, not the strategy. A test author MUST design every test to terminate well below the cap:
+
+- Polling loops have a `deadline = time.monotonic() + N` and exit on the predicate or on the deadline (rule 7). Never `while True:`.
+- Streaming tests bound the generator (rule 6 pattern 1) or read one frame and close with `@pytest.mark.timeout(5)` (rule 6 pattern 2). Never connect to an unbounded SSE generator and rely on `c.stream(...)` close to abort it.
+- Subprocess / launcher tests use `ScriptedLauncher` from `tests/support/launchers.py`, which completes deterministically. Never spawn a real `claude` CLI.
+- `asyncio` tests must not `await` on an `Event`/`Future` that no other task sets. If you cannot prove the awaited object will be resolved, use `asyncio.wait_for(..., timeout=N)` and make the timeout an assertion (`pytest.fail` on timeout, not silent retry).
+- A test legitimately needing more than 15 s adds `@pytest.mark.timeout(N)` with a one-line justification comment. Global config is never relaxed.
+
+The reviewer (and the `test-critic` agent) treats any of the following as automatic FAIL:
+
+- `while True:` in a test
+- `async for` over an iterator with no termination condition
+- `c.stream(...)` against a route whose generator is unbounded by the test setup
+- `time.sleep(...)` inside a loop with no deadline check
+- `await some_future` with no `asyncio.wait_for` wrapper
+
+If a hang reaches CI, root-cause it the same day; do not bump the global timeout to mask it.
+
 ---
 
 ## Pre-merge checklist
@@ -166,6 +189,7 @@ Before marking a PR with new tests as ready:
 - [ ] If the PR adds a `POST` / `PUT` endpoint with a JSON body, it has an OpenAPI contract test (rule 5)
 - [ ] If the PR adds a streaming endpoint, it has an `httpx.AsyncClient` test (rule 6)
 - [ ] No bare `time.sleep` followed by an assertion (rule 7)
+- [ ] No `while True:`, no unbounded `async for`, no `c.stream(...)` against an infinite generator; every loop has a deadline; streaming tests use a bounded source or `@pytest.mark.timeout` (rule 8)
 - [ ] If any hard rule from `CLAUDE.md` is touched, the test verifies the *property* (e.g., "token never appears in any log line") not the *implementation* (e.g., "the redact function was called")
 
 If any box is unchecked, the test is debt. Fix it or document why this case is exempt in the PR body.
