@@ -11,7 +11,7 @@ Business logic lives in mad.core.sessions.use_cases.*.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Header, Query, Request
@@ -84,6 +84,23 @@ class SessionDetailResponse(BaseModel):
     events: list[dict[str, Any]]
     created_at: datetime
     updated_at: datetime
+
+
+def _as_utc(value: datetime | None) -> datetime | None:
+    """Normalize a query datetime to tz-aware UTC.
+
+    FastAPI accepts both date-only (``2026-05-01``) and naive datetime
+    (``2026-05-01T00:00:00``) values for a ``datetime`` query param. Both
+    arrive without ``tzinfo``; comparing them against the tz-aware
+    ``Session.created_at`` raises ``TypeError`` ("can't compare offset-naive
+    and offset-aware datetimes"), surfacing as a 500. We assume UTC for
+    naive inputs — the documented timezone of the persisted timestamps.
+    """
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value
 
 
 def _store(request: Request) -> SessionStore:
@@ -193,10 +210,10 @@ async def list_sessions(
     )
     output = use_case.execute(
         ListSessionsInput(
-            created_after=created_after,
-            created_before=created_before,
-            updated_after=updated_after,
-            updated_before=updated_before,
+            created_after=_as_utc(created_after),
+            created_before=_as_utc(created_before),
+            updated_after=_as_utc(updated_after),
+            updated_before=_as_utc(updated_before),
             order_by=order_by,
             order=order,
         )

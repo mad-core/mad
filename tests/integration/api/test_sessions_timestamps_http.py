@@ -186,6 +186,144 @@ def test_list_sessions_rejects_invalid_order(
 
 
 # ---------------------------------------------------------------------------
+# Aggressive datetime parsing — naive datetime + date-only must NOT 500
+# (regression: comparing offset-naive against the tz-aware Session
+#  timestamp raised TypeError → 500 in production)
+# ---------------------------------------------------------------------------
+
+
+def test_list_sessions_accepts_date_only_filter_without_500(
+    client: TestClient, session_payload: dict
+) -> None:
+    """``created_after=2026-05-01`` (date with no time, no tz) must be
+    interpreted as UTC midnight and compared safely. Returning 500 because
+    of naive vs aware datetime arithmetic is the exact bug this guards.
+    """
+    session_id = _create(client, session_payload)
+
+    r = client.get(
+        "/v1/sessions",
+        params={
+            "created_after": "2000-01-01",
+            "order_by": "created_at",
+            "order": "desc",
+        },
+    )
+    assert r.status_code == 200, r.text
+    ids = [s["session_id"] for s in r.json()]
+    assert session_id in ids
+
+
+def test_list_sessions_accepts_naive_datetime_filter_without_500(
+    client: TestClient, session_payload: dict
+) -> None:
+    """``2026-05-01T00:00:00`` (naive datetime) must be interpreted as UTC
+    rather than crashing the comparison."""
+    session_id = _create(client, session_payload)
+
+    r = client.get(
+        "/v1/sessions",
+        params={"created_after": "2000-01-01T00:00:00"},
+    )
+    assert r.status_code == 200, r.text
+    ids = [s["session_id"] for s in r.json()]
+    assert session_id in ids
+
+
+def test_list_sessions_naive_future_datetime_returns_empty(
+    client: TestClient, session_payload: dict
+) -> None:
+    """Naive future datetime is normalized to UTC and excludes a session
+    that was just created — confirms the normalization, not just that the
+    comparison didn't crash."""
+    _create(client, session_payload)
+
+    r = client.get(
+        "/v1/sessions",
+        params={"created_after": "2099-01-01T00:00:00"},
+    )
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_list_sessions_partial_date_returns_422(
+    client: TestClient,
+) -> None:
+    """A truncated date like ``2026-05`` is NOT a valid ISO-8601 date or
+    datetime — FastAPI must reject with 422, not pass through to the use
+    case where it would fail unpredictably."""
+    r = client.get("/v1/sessions", params={"created_after": "2026-05"})
+    assert r.status_code == 422
+    locs = [tuple(item.get("loc", [])) for item in r.json()["detail"]]
+    assert any("created_after" in loc for loc in locs)
+
+
+def test_list_sessions_combined_filters_and_ordering_no_500(
+    client: TestClient, session_payload: dict
+) -> None:
+    """Combine every query param in one request — the exact shape that
+    triggered the 500 in production. Must return 200 with a sorted list."""
+    sid_a = _create(client, session_payload)
+    sid_b = _create(client, session_payload)
+
+    r = client.get(
+        "/v1/sessions",
+        params={
+            "created_after": "2000-01-01",
+            "created_before": "2099-01-01T00:00:00+00:00",
+            "updated_after": "2000-01-01T00:00:00",
+            "updated_before": "2099-12-31",
+            "order_by": "created_at",
+            "order": "desc",
+        },
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    timestamps = [_parse_iso(s["created_at"]) for s in body]
+    assert timestamps == sorted(timestamps, reverse=True)
+    ids = [s["session_id"] for s in body]
+    assert sid_a in ids and sid_b in ids
+
+
+def test_list_sessions_rejects_garbage_datetime_with_loc(
+    client: TestClient,
+) -> None:
+    """A purely non-ISO string in any of the four datetime params returns
+    422 with a ``loc`` that names the offending field — not 500."""
+    for field in (
+        "created_after",
+        "created_before",
+        "updated_after",
+        "updated_before",
+    ):
+        r = client.get("/v1/sessions", params={field: "not-a-date"})
+        assert r.status_code == 422, f"{field} did not 422: {r.text}"
+        locs = [tuple(item.get("loc", [])) for item in r.json()["detail"]]
+        assert any(field in loc for loc in locs), (
+            f"{field} 422 did not reference itself in loc; got {locs}"
+        )
+
+
+def test_list_sessions_inverted_window_returns_empty_not_500(
+    client: TestClient, session_payload: dict
+) -> None:
+    """An inverted window (``created_after`` after ``created_before``)
+    returns 200 with an empty list — the contract is "filter, don't crash".
+    """
+    _create(client, session_payload)
+
+    r = client.get(
+        "/v1/sessions",
+        params={
+            "created_after": "2099-01-01",
+            "created_before": "2000-01-01",
+        },
+    )
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+# ---------------------------------------------------------------------------
 # OpenAPI contract (rule 5)
 # ---------------------------------------------------------------------------
 
