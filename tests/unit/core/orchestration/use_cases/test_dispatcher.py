@@ -22,7 +22,7 @@ from datetime import UTC
 from datetime import datetime as dt
 from pathlib import Path
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 
@@ -256,7 +256,3 @@ async def test_orphan_dispatched_task_emits_task_failed_on_restart(
         assert failed[2]["reason"] == "interrupted_by_restart"
     finally:
         await h.stop()
-
-
-def _orphan_uuid() -> UUID:
-    return uuid4()
