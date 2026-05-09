@@ -197,6 +197,7 @@ async def test_launcher_exception_emits_task_failed(tmp_path: Path) -> None:
     class BoomLauncher:
         async def run(
             self,
+            session_id: str,
             prompt: str,
             workspace: Path,
             emit: Callable[..., Any],
