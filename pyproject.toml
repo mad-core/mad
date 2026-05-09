@@ -112,7 +112,7 @@ filterwarnings = [
 target-version = "py311"
 line-length = 100
 src = ["src", "tests"]
-extend-exclude = ["sessions", "venv", ".venv", "build", "dist"]
+extend-exclude = ["sessions", "venv", ".venv", "build", "dist", "tests/.bats-*"]
 
 [tool.ruff.lint]
 select = [
