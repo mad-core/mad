@@ -56,6 +56,10 @@ Issues = "https://github.com/jlsaco/mad/issues"
 [tool.hatch.build.targets.wheel]
 packages = ["src/mad"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"src/mad/adapters/outbound/agents/hooks/forward.sh" = "mad/adapters/outbound/agents/hooks/forward.sh"
+"src/mad/adapters/outbound/agents/hooks/settings.local.json" = "mad/adapters/outbound/agents/hooks/settings.local.json"
+
 [tool.hatch.build.targets.sdist]
 include = [
   "src/mad",

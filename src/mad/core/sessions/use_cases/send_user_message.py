@@ -118,7 +118,7 @@ async def _run_launcher(
 
     primary_failure: Exception | None = None
     try:
-        await launcher.run(prompt=prompt, workspace=workspace, emit=emit)
+        await launcher.run(session_id=session_id, prompt=prompt, workspace=workspace, emit=emit)
     except Exception as exc:
         if session.status == "running":
             await emitter.emit(session_id, "session.error", {"error": str(exc)})
@@ -134,7 +134,7 @@ async def _run_launcher(
     auto_sync_failure: Exception | None = None
     try:
         auto_sync_prompt = build_auto_sync_prompt(session_id, session.base_branch)
-        await launcher.run(prompt=auto_sync_prompt, workspace=workspace, emit=emit)
+        await launcher.run(session_id=session_id, prompt=auto_sync_prompt, workspace=workspace, emit=emit)
     except Exception as exc:
         await emitter.emit(
             session_id, "session.error", {"error": f"auto-sync failed: {exc}"}
