@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.5.3 (2026-05-15)
+
+### Features
+
+- **http**: Add dispatch_policy PATCH and manual trigger endpoints
+  ([`f5dae87`](https://github.com/jlsaco/mad/commit/f5dae87cf9dbc1745371cc26170fdbf277f05fa6))
+
+
 ## v0.5.2 (2026-05-15)
 
 ### Bug Fixes
