@@ -45,3 +45,4 @@ What else was on the table, and why did we reject it?
 | [ADR-0007](0007-single-write-gateway-event-emitter.md) | Single write gateway: EventEmitter | Accepted |
 | [ADR-0009](0009-orchestration-module.md) | Orchestration module: scope, vocabulary, and persistence | Accepted |
 | [ADR-0008](0008-internal-hook-adapter-and-vocabulary.md) | Internal inbound adapter + `agent.<provider>.hook.*` vocabulary | Accepted |
+| [ADR-0010](0010-mcp-mounted-http-inbound-adapter.md) | MCP exposed as an HTTP-mounted inbound adapter | Accepted |

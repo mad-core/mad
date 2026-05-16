@@ -100,6 +100,24 @@ def create_app(
             dispatcher_kwargs["tick_interval_s"] = dispatcher_tick_interval_s
         final_dispatcher = Dispatcher(**dispatcher_kwargs)  # type: ignore[arg-type]
 
+    # MCP inbound adapter (ADR-0010): same process, same dependencies as the
+    # HTTP routes — tools call use cases in-process, not Mad's own HTTP. The
+    # session manager must run inside an async context, so it is entered in
+    # the app lifespan alongside the dispatcher. Imported lazily: the MCP
+    # adapter reuses the HTTP route models, so a module-level import here
+    # would form an import cycle through this package's __init__.
+    from mad.adapters.inbound.mcp import build_mcp_server
+
+    mcp_server = build_mcp_server(
+        store=final_store,
+        session_repo=final_repo,
+        workspace_provisioner=final_provisioner,
+        launcher_factory=final_launcher_factory,
+        event_emitter=final_event_emitter,
+        task_projection=final_projection,
+    )
+    mcp_asgi_app = mcp_server.streamable_http_app()
+
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         ensure_sessions_dir()
@@ -107,10 +125,11 @@ def create_app(
         # before the dispatcher's orphan recovery runs (ADR-0009 Decision 5).
         final_projection.bootstrap_from_log(final_event_log_query)
         await final_dispatcher.start()
-        try:
-            yield
-        finally:
-            await final_dispatcher.stop()
+        async with mcp_server.session_manager.run():
+            try:
+                yield
+            finally:
+                await final_dispatcher.stop()
 
     app = FastAPI(title="Mad", version="0.3.0", lifespan=lifespan)
     app.state.store = final_store
@@ -123,6 +142,7 @@ def create_app(
     app.state.task_projection = final_projection
     app.state.dispatcher = final_dispatcher
     app.state.clock = final_clock
+    app.state.mcp_server = mcp_server
 
     @app.exception_handler(PathTraversalError)
     async def _path_traversal_handler(request: Request, exc: PathTraversalError) -> JSONResponse:
@@ -171,4 +191,5 @@ def create_app(
     app.include_router(sessions_router)
     app.include_router(events_router)
     app.include_router(orchestration_router)
+    app.mount("/mcp", mcp_asgi_app)
     return app

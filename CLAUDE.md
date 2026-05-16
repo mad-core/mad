@@ -101,6 +101,7 @@ Load-bearing decisions are recorded as ADRs in `docs/adr/` — see `docs/adr/REA
 - [ADR-0006](docs/adr/0006-multi-tenancy-deferred.md) — multi-tenancy deferred to a future module.
 - [ADR-0007](docs/adr/0007-single-write-gateway-event-emitter.md) — `EventEmitter` as the single write gateway; `EventStore` port; `CreateSessionUseCase` made async.
 - [ADR-0008](docs/adr/0008-internal-hook-adapter-and-vocabulary.md) — internal inbound adapter on a UDS for claude-cli hook ingestion; `agent.<provider>.hook.*` vocabulary.
+- [ADR-0010](docs/adr/0010-mcp-mounted-http-inbound-adapter.md) — MCP exposed as a Streamable-HTTP ASGI app mounted at `/mcp`; tools call use cases in-process; auth stays at the Cloudflare edge.
 
 ## Key files
 
@@ -108,6 +109,7 @@ Load-bearing decisions are recorded as ADRs in `docs/adr/` — see `docs/adr/REA
 - `docs/backlog.md` — improvements deferred past v0.1.
 - `docs/sandbox-bwrap.md` — operator's guide for hardening the sandbox with bubblewrap.
 - `docs/cloudflare-tunnel.md` — operator's guide for exposing Mad through a Cloudflare Tunnel with Service-Token-based Cloudflare Access (no project code changes; auth happens at the edge).
+- `docs/claude-code-mcp.md` — operator's guide for driving Mad from an AI agent over MCP (`/mcp`): tool surface, local + tunneled client config, `MAD_MCP_ALLOWED_HOSTS`, manual validation.
 - `pyproject.toml` — package metadata, dependencies, build backend, and the `mad` console script. Single source of truth for `pip install -e .`.
 - `src/mad/adapters/inbound/http/app.py` — `create_app(store=..., session_repo=..., workspace_provisioner=..., launcher_factory=...)` factory and router wiring.
 - `src/mad/adapters/inbound/http/dependencies.py` — composition root; builds production defaults for all outbound dependencies, including `EventEmitter`.
@@ -120,6 +122,7 @@ Load-bearing decisions are recorded as ADRs in `docs/adr/` — see `docs/adr/REA
 - `src/mad/core/events/emitter.py` — `EventEmitter` single write gateway; depends on `EventStore` + `EventBus`; every use case calls `emit()` here, never the underlying ports directly (hard rule 11).
 - `src/mad/adapters/outbound/persistence/` — `JsonlSessionRepository` (JSONL file log, hard rule 6) and `LocalWorkspaceProvisioner`.
 - `src/mad/adapters/inbound/internal/` — internal FastAPI app for hook ingestion (`POST /_internal/hooks`, UDS-bound, separate from the public app). Shares the same `EventEmitter` instance so hook events appear in `GET /v1/events/stream` automatically.
+- `src/mad/adapters/inbound/mcp/` — MCP inbound adapter (ADR-0010). `build_mcp_server(...)` returns a `FastMCP` exposing five session tools; `create_app` mounts its `streamable_http_app()` at `/mcp` and runs the session manager in the app lifespan. Tools call the same use cases as the HTTP routes, in-process, and reuse the HTTP layer's Pydantic models. `MAD_MCP_ALLOWED_HOSTS` opts into DNS-rebinding protection (off by default — auth is at the Cloudflare edge). Operator guide: `docs/claude-code-mcp.md`.
 - `src/mad/adapters/outbound/agents/` — production `AgentLauncher` implementations (`claude_cli`) and the by-name `factory.get_launcher` extension point.
 - `src/mad/adapters/outbound/agents/hooks/` — canonical `forward.sh` and `settings.local.json` materialized into every workspace; closed hook list per ADR-0008.
 - `src/mad/adapters/outbound/agents/hook_socket.py` — `default_hook_socket_path()` / `resolve_hook_socket_path()` helpers shared by the launcher and the dual-uvicorn startup.

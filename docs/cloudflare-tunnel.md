@@ -331,7 +331,9 @@ Run them as two independent services. If they share one unit and Mad crashes, th
 
 ### Claude Code / MCP
 
-Pass the two headers through whatever HTTP client your MCP server wraps. With `httpx`:
+Mad ships a native MCP server mounted at **`/mcp`** on this same public app, reachable through this same tunnel and protected by this same Service Token — no extra ingress rule. Point an MCP client at `https://mad.example.com/mcp` with the two `CF-Access-*` headers below. The full tool surface, client config, the `MAD_MCP_ALLOWED_HOSTS` Host-header caveat, and manual validation steps are in [`docs/claude-code-mcp.md`](claude-code-mcp.md).
+
+For scripted REST access, pass the two headers through whatever HTTP client you wrap. With `httpx`:
 
 ```python
 import httpx, os
