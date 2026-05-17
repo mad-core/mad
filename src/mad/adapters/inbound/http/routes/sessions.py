@@ -68,6 +68,15 @@ class CreateSessionRequest(BaseModel):
     agent: AgentSpec
     resources: list[ResourceRequest] = Field(default_factory=list)
     base_branch: str | None = None
+    working_directory: str | None = Field(
+        default=None,
+        description=(
+            "Optional /workspace/... path to use as the agent's working directory. "
+            "When unset and exactly one github_repository resource is present, the "
+            "directory auto-derives from that mount; otherwise it falls back to the "
+            "workspace root."
+        ),
+    )
 
 
 class SendMessageRequest(BaseModel):
@@ -180,6 +189,7 @@ async def create_session(
             resources=resource_specs,
             idempotency_key=idempotency_key,
             base_branch=payload.base_branch,
+            working_directory=payload.working_directory,
         )
     )
 

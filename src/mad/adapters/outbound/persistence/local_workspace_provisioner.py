@@ -1,11 +1,23 @@
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
 import tempfile
 from importlib import resources
 from pathlib import Path
+from typing import Any
+
+_FORWARD_HOOK_MARKER = "/.claude/hooks/forward.sh"
+
+
+class MalformedSettingsLocalJson(ValueError):
+    """Raised when a repository ships a ``.claude/settings.local.json`` that is not valid JSON.
+
+    The provisioner refuses to silently overwrite the file in that case —
+    surfaces as a 400 via the existing ``ValueError`` handler.
+    """
 
 
 def workspace_path(session_id: str) -> Path:
@@ -93,8 +105,21 @@ class LocalWorkspaceProvisioner:
         os.chmod(forward_sh_dest, 0o755)  # noqa: S103 — claude-cli must execute the script
 
         settings_src = pkg.joinpath("settings.local.json").read_text(encoding="utf-8")
+        bootstrap = json.loads(settings_src)
         settings_dest = local_path / ".claude" / "settings.local.json"
-        settings_dest.write_text(settings_src, encoding="utf-8")
+        if settings_dest.exists():
+            existing_raw = settings_dest.read_text(encoding="utf-8")
+            try:
+                existing = json.loads(existing_raw) if existing_raw.strip() else {}
+            except json.JSONDecodeError as exc:
+                raise MalformedSettingsLocalJson(
+                    f"refusing to overwrite malformed {settings_dest}: {exc.msg} "
+                    f"(line {exc.lineno} column {exc.colno})"
+                ) from exc
+            merged = _merge_hook_bootstrap(existing, bootstrap)
+            settings_dest.write_text(json.dumps(merged, indent=2) + "\n", encoding="utf-8")
+        else:
+            settings_dest.write_text(settings_src, encoding="utf-8")
 
         git_dir = local_path / ".git"
         if not git_dir.exists():
@@ -123,3 +148,32 @@ class LocalWorkspaceProvisioner:
         local_path = _resolve_mount(workspace, mount_path)
         local_path.parent.mkdir(parents=True, exist_ok=True)
         local_path.write_text(content)
+
+
+def _merge_hook_bootstrap(existing: dict[str, Any], bootstrap: dict[str, Any]) -> dict[str, Any]:
+    """Merge Mad's hook bootstrap into a project's settings.local.json.
+
+    Top-level keys outside ``hooks`` are preserved from ``existing`` (Mad does
+    not own them). Inside ``hooks``, event keys are unioned; under each event,
+    Mad's matcher group is appended only if no group already contains a
+    forward.sh command (keeps re-runs idempotent).
+    """
+    merged: dict[str, Any] = dict(existing)
+    merged_hooks: dict[str, list[dict[str, Any]]] = dict(existing.get("hooks") or {})
+    for event_name, mad_groups in (bootstrap.get("hooks") or {}).items():
+        groups = list(merged_hooks.get(event_name, []))
+        if not _has_forward_hook(groups):
+            groups.extend(mad_groups)
+        merged_hooks[event_name] = groups
+    merged["hooks"] = merged_hooks
+    return merged
+
+
+def _has_forward_hook(groups: list[dict[str, Any]]) -> bool:
+    """Return True if any matcher group already routes through ``forward.sh``."""
+    for group in groups:
+        for hook in group.get("hooks", []):
+            command = hook.get("command", "")
+            if isinstance(command, str) and _FORWARD_HOOK_MARKER in command:
+                return True
+    return False

@@ -102,7 +102,7 @@ async def _run_launcher(
     tokens_to_redact = _collect_tokens(session)
 
     launcher = get_launcher(session.agent["provider"])
-    workspace = Path(session.workspace)
+    workspace = Path(session.working_directory or session.workspace)
 
     async def emit(event_type: str, data: dict[str, Any] | None = None) -> None:
         redacted_data = (

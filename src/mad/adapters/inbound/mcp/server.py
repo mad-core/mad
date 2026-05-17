@@ -144,6 +144,7 @@ def build_mcp_server(
                 resources=resource_specs,
                 idempotency_key=idempotency_key,
                 base_branch=payload.base_branch,
+                working_directory=payload.working_directory,
             )
         )
         return output.session.response

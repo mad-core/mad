@@ -36,6 +36,7 @@ class CreateSessionInput:
     resources: list[ResourceSpec] = field(default_factory=list)
     idempotency_key: str | None = None
     base_branch: str | None = None
+    working_directory: str | None = None
 
 
 @dataclass
@@ -72,12 +73,25 @@ class CreateSessionUseCase:
         # Validate all mount paths before doing any I/O
         for res in payload.resources:
             MountPath(res.mount_path)  # raises PathTraversalError if invalid
+        if payload.working_directory is not None:
+            MountPath(payload.working_directory)  # same hard-rule-3 guard
 
         session_id = "sesn_" + uuid.uuid4().hex[:12]
         workspace: Path = self._provisioner.create(session_id)
 
+        working_directory = _resolve_working_directory(
+            workspace=workspace,
+            explicit=payload.working_directory,
+            resources=payload.resources,
+        )
+
         created_event = await self._emitter.emit(
-            session_id, "session.created", {"agent": payload.agent["name"]}
+            session_id,
+            "session.created",
+            {
+                "agent": payload.agent["name"],
+                "working_directory": str(working_directory),
+            },
         )
 
         resources_mounted: list[dict[str, Any]] = []
@@ -130,6 +144,7 @@ class CreateSessionUseCase:
             session_id=session_id,
             agent=payload.agent,
             workspace=str(workspace),
+            working_directory=str(working_directory),
             status="created",
             base_branch=payload.base_branch,
             resources_mounted=resources_mounted,
@@ -155,4 +170,24 @@ def _resolve_mount(workspace: Path, mount_path: str) -> Path:
     relative = relative.lstrip("/")
     if relative:
         return workspace / relative
+    return workspace
+
+
+def _resolve_working_directory(
+    workspace: Path,
+    explicit: str | None,
+    resources: list[ResourceSpec],
+) -> Path:
+    """Choose the agent's working directory.
+
+    Explicit value wins; otherwise auto-derive from a single
+    ``github_repository`` mount; otherwise fall back to the workspace root.
+    Multi-repo and repo-less sessions stay at workspace root by design — the
+    explicit field is the escape hatch.
+    """
+    if explicit is not None:
+        return _resolve_mount(workspace, explicit)
+    github_mounts = [r for r in resources if r.type == "github_repository"]
+    if len(github_mounts) == 1:
+        return _resolve_mount(workspace, github_mounts[0].mount_path)
     return workspace

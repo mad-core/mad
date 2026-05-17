@@ -18,8 +18,11 @@ import stat
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from mad.adapters.outbound.persistence.local_workspace_provisioner import (
     LocalWorkspaceProvisioner,
+    MalformedSettingsLocalJson,
 )
 
 _EXPECTED_HOOKS: frozenset[str] = frozenset(
@@ -182,3 +185,185 @@ def test_install_hooks_without_git_dir_skips_exclude(tmp_path: Path) -> None:
     assert (workspace / ".claude" / "hooks" / "forward.sh").is_file()
     assert (workspace / ".claude" / "settings.local.json").is_file()
     assert not (workspace / ".git").exists(), "test setup invariant: no .git in plain workspace"
+
+
+# ---------------------------------------------------------------------------
+# Issue #40 — deep-merge into an existing settings.local.json instead of clobber
+# ---------------------------------------------------------------------------
+
+
+def _bare_repo_with_settings(tmp_path: Path, settings_content: str) -> Path:
+    """Build a bare repo that ships ``.claude/settings.local.json`` with the
+    given content. Lets us exercise the merge path end-to-end via
+    ``materialize_github_repo`` without monkeypatching."""
+    seed = tmp_path / "seed_with_settings"
+    seed.mkdir()
+    subprocess.run(["git", "init", "-q", "-b", "main", str(seed)], check=True)
+    claude_dir = seed / ".claude"
+    claude_dir.mkdir()
+    (claude_dir / "settings.local.json").write_text(settings_content)
+    # -f bypasses any global gitignore the contributor may have set for
+    # .claude/settings.local.json — without it this fixture is fragile.
+    subprocess.run(["git", "-C", str(seed), "add", "-f", ".claude/settings.local.json"], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(seed),
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "user.name=t",
+            "commit",
+            "-q",
+            "-m",
+            "init",
+        ],
+        check=True,
+    )
+    bare = tmp_path / "origin_settings.git"
+    subprocess.run(["git", "clone", "-q", "--bare", str(seed), str(bare)], check=True)
+    return bare
+
+
+def test_merge_preserves_project_hooks_and_appends_mads_forward(tmp_path: Path) -> None:
+    """A repo that ships its own PostToolUse hook must keep that entry AND
+    get Mad's forward.sh entry appended after the merge."""
+    project_settings = json.dumps(
+        {
+            "hooks": {
+                "PostToolUse": [
+                    {
+                        "matcher": "Bash",
+                        "hooks": [{"type": "command", "command": "echo project-hook"}],
+                    }
+                ]
+            },
+            "permissions": {"allow": ["Read", "Edit"]},
+        }
+    )
+    bare = _bare_repo_with_settings(tmp_path, project_settings)
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    LocalWorkspaceProvisioner().materialize_github_repo(
+        workspace=workspace,
+        mount_path="/workspace/repo",
+        repo_url=f"file://{bare}",
+        token=None,
+    )
+
+    merged = json.loads((workspace / "repo" / ".claude" / "settings.local.json").read_text())
+    post_tool_use = merged["hooks"]["PostToolUse"]
+
+    project_commands = [
+        h["command"]
+        for group in post_tool_use
+        for h in group.get("hooks", [])
+        if "project-hook" in h.get("command", "")
+    ]
+    mad_commands = [
+        h["command"]
+        for group in post_tool_use
+        for h in group.get("hooks", [])
+        if "/.claude/hooks/forward.sh" in h.get("command", "")
+    ]
+    assert project_commands, f"project's PostToolUse hook was lost: {post_tool_use!r}"
+    assert mad_commands, f"Mad's forward.sh PostToolUse hook was not appended: {post_tool_use!r}"
+
+    # Unrelated top-level keys (permissions) must be preserved verbatim.
+    assert merged["permissions"] == {"allow": ["Read", "Edit"]}
+
+
+def test_merge_adds_mads_hooks_for_events_the_project_did_not_declare(
+    tmp_path: Path,
+) -> None:
+    """A repo that declares only PostToolUse → after merge, every event from
+    Mad's closed list is present (Mad's coverage is unaffected by the project)."""
+    project_settings = json.dumps(
+        {
+            "hooks": {
+                "PostToolUse": [
+                    {
+                        "matcher": "Bash",
+                        "hooks": [{"type": "command", "command": "echo project-hook"}],
+                    }
+                ]
+            }
+        }
+    )
+    bare = _bare_repo_with_settings(tmp_path, project_settings)
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    LocalWorkspaceProvisioner().materialize_github_repo(
+        workspace=workspace,
+        mount_path="/workspace/repo",
+        repo_url=f"file://{bare}",
+        token=None,
+    )
+
+    merged = json.loads((workspace / "repo" / ".claude" / "settings.local.json").read_text())
+    declared = frozenset(merged["hooks"].keys())
+    assert declared == _EXPECTED_HOOKS, (
+        f"merged hook set must cover Mad's full closed list. "
+        f"missing={sorted(_EXPECTED_HOOKS - declared)}, extra={sorted(declared - _EXPECTED_HOOKS)}"
+    )
+
+
+def test_merge_is_idempotent_when_mads_hook_already_present(tmp_path: Path) -> None:
+    """Negative twin of the append: if Mad's forward.sh entry is already in
+    the file (e.g. re-running materialization), do NOT duplicate it."""
+    project_settings = json.dumps(
+        {
+            "hooks": {
+                "PostToolUse": [
+                    {
+                        "matcher": ".*",
+                        "hooks": [
+                            {
+                                "type": "command",
+                                "command": "bash $CLAUDE_PROJECT_DIR/.claude/hooks/forward.sh",
+                            }
+                        ],
+                    }
+                ]
+            }
+        }
+    )
+    bare = _bare_repo_with_settings(tmp_path, project_settings)
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    LocalWorkspaceProvisioner().materialize_github_repo(
+        workspace=workspace,
+        mount_path="/workspace/repo",
+        repo_url=f"file://{bare}",
+        token=None,
+    )
+
+    merged = json.loads((workspace / "repo" / ".claude" / "settings.local.json").read_text())
+    forward_count = sum(
+        1
+        for group in merged["hooks"]["PostToolUse"]
+        for h in group.get("hooks", [])
+        if "/.claude/hooks/forward.sh" in h.get("command", "")
+    )
+    assert forward_count == 1, (
+        f"forward.sh must appear exactly once; got {forward_count} in {merged['hooks']['PostToolUse']!r}"
+    )
+
+
+def test_merge_raises_typed_exception_on_malformed_existing_json(tmp_path: Path) -> None:
+    """A malformed pre-existing settings.local.json must raise a typed exception
+    (not silently overwrite). The provisioner refuses to destroy what it can't parse."""
+    bare = _bare_repo_with_settings(tmp_path, "this is not { valid json")
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    with pytest.raises(MalformedSettingsLocalJson) as excinfo:
+        LocalWorkspaceProvisioner().materialize_github_repo(
+            workspace=workspace,
+            mount_path="/workspace/repo",
+            repo_url=f"file://{bare}",
+            token=None,
+        )
+    msg = str(excinfo.value)
+    assert "settings.local.json" in msg
+    assert "refusing to overwrite" in msg

@@ -102,6 +102,7 @@ Load-bearing decisions are recorded as ADRs in `docs/adr/` — see `docs/adr/REA
 - [ADR-0007](docs/adr/0007-single-write-gateway-event-emitter.md) — `EventEmitter` as the single write gateway; `EventStore` port; `CreateSessionUseCase` made async.
 - [ADR-0008](docs/adr/0008-internal-hook-adapter-and-vocabulary.md) — internal inbound adapter on a UDS for claude-cli hook ingestion; `agent.<provider>.hook.*` vocabulary.
 - [ADR-0010](docs/adr/0010-mcp-mounted-http-inbound-adapter.md) — MCP exposed as a Streamable-HTTP ASGI app mounted at `/mcp`; tools call use cases in-process; auth stays at the Cloudflare edge.
+- [ADR-0011](docs/adr/0011-launcher-working-directory.md) — launcher cwd aligns with the cloned repo; `CreateSessionRequest.working_directory` plus auto-derive for single-github-mount sessions; hook bootstrap deep-merges into existing `settings.local.json`.
 
 ## Key files
 
@@ -145,7 +146,7 @@ class AgentLauncher(Protocol):
     ) -> None: ...
 ```
 
-The launcher receives the session ID, the prompt, the workspace path, and an `emit` callback. It spawns the external agent, streams stdout line-by-line as `agent.output` events, and emits `session.status_idle` (exit 0) or `session.error` (non-zero / timeout) on completion. Current production implementation:
+The launcher receives the session ID, the prompt, an effective working-directory path (passed through the historical `workspace` parameter), and an `emit` callback. It spawns the external agent with `cwd=workspace`, streams stdout line-by-line as `agent.output` events, and emits `session.status_idle` (exit 0) or `session.error` (non-zero / timeout) on completion. The use case (`CreateSessionUseCase`) decides what `workspace` resolves to per [ADR-0011](docs/adr/0011-launcher-working-directory.md): the cloned repo path for a single-github-mount session, the workspace root otherwise, or any caller-specified `working_directory` from the request. Current production implementation:
 - `claude_cli` — spawns `claude --dangerously-skip-permissions -p "{prompt}"` with `cwd=workspace`. Configurable via `MAD_CLAUDE_CLI_BIN` and `MAD_CLAUDE_CLI_TIMEOUT_S`. Before spawning, the launcher exports three env vars to the subprocess: `MAD_SESSION_ID` (session attribution for hook payloads), `MAD_HOOK_SOCKET` (UDS path where `forward.sh` posts), and `MAD_PROVIDER` (the provider segment in `agent.<provider>.hook.*` event types).
 
 The protocol lives in `mad.core.ports.outbound.agent_launcher`. The factory `mad.adapters.outbound.agents.factory.get_launcher(provider_name)` dispatches by name and is the extension point for additional providers. Tests inject a `ScriptedLauncher` (from `tests/support/launchers.py`) directly via `create_app(launcher_factory=...)` — no monkey-patching of production modules.

@@ -37,6 +37,7 @@ class Session:
     session_id: str
     agent: dict[str, Any]
     workspace: str
+    working_directory: str = ""
     status: str = "created"
     base_branch: str | None = None
     resources_mounted: list[dict[str, Any]] = field(default_factory=list)
@@ -53,6 +54,8 @@ class Session:
         # produce two ``now()`` values that differ in microseconds.
         if self.updated_at is _SENTINEL:
             self.updated_at = self.created_at
+        if not self.working_directory:
+            self.working_directory = self.workspace
 
     # ---------------------------------------------------------------------------
     # Domain transitions
@@ -90,6 +93,7 @@ class Session:
             "session_id": self.session_id,
             "agent": self.agent,
             "workspace": self.workspace,
+            "working_directory": self.working_directory,
             "status": self.status,
             "base_branch": self.base_branch,
             "resources_mounted": self.resources_mounted,
@@ -108,6 +112,7 @@ class Session:
             session_id=d["session_id"],
             agent=d.get("agent", {}),
             workspace=d.get("workspace", ""),
+            working_directory=d.get("working_directory", ""),
             status=d.get("status", "created"),
             base_branch=d.get("base_branch"),
             resources_mounted=d.get("resources_mounted", []),
