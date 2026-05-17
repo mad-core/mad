@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.5.5 (2026-05-17)
+
+### Features
+
+- **http**: Launch agents in the cloned repo, not the workspace root
+  ([`5f639e2`](https://github.com/jlsaco/mad/commit/5f639e2c0b379b8bdd9bf20bfdcf21e9fdbdb057))
+
+
 ## v0.5.4 (2026-05-16)
 
 ### Features
