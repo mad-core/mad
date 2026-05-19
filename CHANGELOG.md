@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.5.6 (2026-05-19)
+
+### Bug Fixes
+
+- **cli**: Unpack 8 deps from build_dependencies and wire into create_app
+  ([`1520c87`](https://github.com/jlsaco/mad/commit/1520c870f157915694c3275821b743467dcc72b5))
+
+
 ## v0.5.5 (2026-05-17)
 
 ### Features
