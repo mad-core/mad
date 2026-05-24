@@ -117,6 +117,7 @@ The "Multi Agent Develop — takes an idea and ships it end-to-end" framing belo
 - [`docs/adr/`](docs/adr/) — Architecture Decision Records (start at `README.md`).
 - [`docs/backlog.md`](docs/backlog.md) — improvements deferred past v0.1.
 - [`docs/sandbox-bwrap.md`](docs/sandbox-bwrap.md) — operator's guide for hardening the sandbox with bubblewrap.
+- [`docs/ai-develop-on-issue.md`](docs/ai-develop-on-issue.md) — operator's guide for the label-gated GitHub Action that runs Claude on an issue.
 - [`docs/testing-heuristics.md`](docs/testing-heuristics.md) — the eight heuristics every test must satisfy (hard rule 10).
 
 ## License
