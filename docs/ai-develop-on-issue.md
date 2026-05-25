@@ -87,8 +87,12 @@ gh label create "ai:auto-develop" \
    `<slug>` from the title. An existing branch is reused; otherwise it is created.
 4. **Develop** — `anthropics/claude-code-action@v1` runs Claude against the
    checked-out branch with the OAuth token.
-5. **PR** — the workflow commits any remaining changes, pushes, and opens a
-   non-draft PR toward `main` (or relies on the push to update an existing one).
+5. **Commit / push / PR** — Claude finishes the whole git flow itself, from inside
+   the action, while the checkout's auth is still live: it commits to the
+   already-checked-out convention branch, pushes it, and opens a non-draft PR
+   toward `main` (skipping PR creation if one already exists). Doing this inside
+   the action — rather than in a later step — avoids the auth teardown that breaks
+   a post-action `git push`. `GH_TOKEN` is exported to the action so `gh` works.
 
 A `concurrency` group keyed by the issue number with `cancel-in-progress: true`
 guarantees at most one run per issue: re-applying the label cancels any in-flight
