@@ -1,6 +1,16 @@
 # CHANGELOG
 
 
+## v0.5.8 (2026-06-12)
+
+### Features
+
+- **http**: Configure deployment-wide dispatch policy inherited by sessions
+  ([`16b1772`](https://github.com/jlsaco/mad/commit/16b177226c2fe7653d294e977cf4cfdf2d424920))
+- **http**: Expose every request/response /v1 route as MCP tool
+  ([`0902dc2`](https://github.com/jlsaco/mad/commit/0902dc29f0325249e02e78b13c293ef578df427f))
+
+
 ## v0.5.7 (2026-06-12)
 
 ### Bug Fixes
