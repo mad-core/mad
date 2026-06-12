@@ -100,6 +100,4 @@ class JsonlSessionRepository:
         """
         if not SESSIONS_DIR.exists():
             return []
-        return sorted(
-            p.stem for p in SESSIONS_DIR.glob("*.jsonl") if not p.stem.startswith("__")
-        )
+        return sorted(p.stem for p in SESSIONS_DIR.glob("*.jsonl") if not p.stem.startswith("__"))
