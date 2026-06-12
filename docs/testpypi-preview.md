@@ -65,13 +65,18 @@ To pause previews later, set `TESTPYPI_ENABLED` to anything other than `true`
 
 ## Installing a preview
 
-The `verify` job comments the exact command on each PR. It looks like:
+The `verify` job comments the exact command on each PR. It installs the wheel by
+its TestPyPI URL so that **only `mad-bros` comes from TestPyPI and every
+dependency resolves from the real PyPI** (the default index):
 
 ```bash
-pip install --index-url https://test.pypi.org/simple/ \
-  --extra-index-url https://pypi.org/simple/ "mad-bros==0.5.6.dev<run_id>"
+pip install "$(curl -s \
+  https://test.pypi.org/pypi/mad-bros/0.5.6.dev<run_id>/json \
+  | jq -r 'first(.urls[] | select(.packagetype=="bdist_wheel") | .url)')"
 ```
 
-The `--extra-index-url` is required so runtime dependencies (fastapi, anthropic,
-mcp, …) resolve from the real PyPI; only `mad-bros` itself is pulled from
-TestPyPI.
+> ⚠️ Do **not** install with `--index-url https://test.pypi.org/simple/`
+> (even with `--extra-index-url`). TestPyPI hosts throwaway/squatted packages —
+> e.g. a dummy `FASTAPI 1.0` — and pip picks candidates by version across all
+> configured indexes, so that junk shadows the real `fastapi` and breaks the
+> install. Installing the wheel by URL keeps dependency resolution on PyPI only.

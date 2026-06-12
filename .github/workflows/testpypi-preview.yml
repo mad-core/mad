@@ -133,27 +133,29 @@ jobs:
       - name: Install the published preview in a clean venv and import it
         env:
           VERSION: ${{ needs.build.outputs.version }}
-        # Deps resolve from real PyPI (TestPyPI does not mirror fastapi/anthropic
-        # /mcp); only mad-bros itself comes from TestPyPI. Retry because TestPyPI
-        # indexing lags the upload by a few seconds.
+        # Resolve the exact wheel URL from TestPyPI's JSON API and install THAT
+        # url, so pip pulls mad-bros from TestPyPI but every dependency from the
+        # default index (real PyPI). Pointing pip's --index-url at TestPyPI for
+        # the whole resolution is unsafe: TestPyPI hosts junk squats (e.g. a
+        # dummy `FASTAPI 1.0`) that shadow real deps by version number and break
+        # the install. Retry because TestPyPI indexing lags the upload.
         run: |
           set -euo pipefail
           python -m venv /tmp/v
-          installed=""
+          wheel_url=""
           for i in $(seq 1 12); do
-            if /tmp/v/bin/pip install \
-                 --index-url https://test.pypi.org/simple/ \
-                 --extra-index-url https://pypi.org/simple/ \
-                 "mad-bros==${VERSION}"; then
-              installed=1; break
-            fi
-            echo "attempt $i: ${VERSION} not indexed yet, waiting…"
+            wheel_url=$(curl -fsS "https://test.pypi.org/pypi/mad-bros/${VERSION}/json" 2>/dev/null \
+              | jq -r 'first(.urls[] | select(.packagetype=="bdist_wheel") | .url) // empty' || true)
+            [ -n "$wheel_url" ] && break
+            echo "attempt $i: ${VERSION} not on TestPyPI yet, waiting…"
             sleep 15
           done
-          if [ -z "$installed" ]; then
-            echo "::error::mad-bros==${VERSION} never became installable from TestPyPI"
+          if [ -z "$wheel_url" ]; then
+            echo "::error::wheel for mad-bros==${VERSION} never appeared on TestPyPI"
             exit 1
           fi
+          echo "Installing ${wheel_url} (dependencies resolve from real PyPI)"
+          /tmp/v/bin/pip install "$wheel_url"
           # The faithful smoke test: the exact import chain that #50 broke.
           /tmp/v/bin/python -c "from mad.core.sessions import SessionStore; from mad.adapters.inbound.http.app import create_app; create_app(); print('import + create_app OK')"
 
@@ -170,10 +172,11 @@ jobs:
               marker,
               '📦 **TestPyPI preview published & verified**',
               '',
-              "Install this PR's exact built artifact with:",
+              "Install this PR's exact built artifact (deps resolve from real PyPI):",
               '```bash',
-              'pip install --index-url https://test.pypi.org/simple/ \\',
-              `  --extra-index-url https://pypi.org/simple/ "mad-bros==${version}"`,
+              'pip install "$(curl -s \\',
+              `  https://test.pypi.org/pypi/mad-bros/${version}/json \\`,
+              "  | jq -r 'first(.urls[] | select(.packagetype==\"bdist_wheel\") | .url)')\"",
               '```',
               '',
               '_CI verified a clean-venv install imports `mad.core.sessions` and boots `create_app()`._',
