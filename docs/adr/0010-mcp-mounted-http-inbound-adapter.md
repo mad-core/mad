@@ -29,6 +29,8 @@ Each of the five tools instantiates the same use case the corresponding REST han
 
 ### 3. Five tools, ~1:1 with the session use cases — no event tools
 
+> **Superseded by [ADR-0012](0012-http-mcp-tool-parity.md) (2026-06-12).** The five-tool curated subset proved too narrow: orchestration and the bounded event query were reachable over HTTP but not MCP, and MCP is the primary consumer. ADR-0012 establishes full parity — every request/response `/v1` route is a tool — with the streaming SSE surface (`GET /v1/events/stream`) as the sole carve-out. The decision below is retained for history.
+
 `mad_create_session`, `mad_send_message`, `mad_list_sessions`, `mad_get_session`, `mad_delete_session`. `agent.*` output, hooks, and the cross-session event stream are deliberately **not** tools — they are operator telemetry on the existing SSE surface (ADR-0004), a non-actionable firehose for an orchestrator.
 
 ### 4. Tool schemas reuse the HTTP layer's Pydantic models

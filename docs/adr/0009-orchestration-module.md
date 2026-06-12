@@ -134,6 +134,20 @@ The Clock port from §8 lands its consumers. Three policies on `Session.dispatch
 
 **Trigger semantics.** `POST /trigger` is `manual`-only. It captures the current queue length and sets `manual_drain_remaining` to that count. New tasks enqueued after the trigger but before the drain finishes do NOT join the drain (operator must trigger again). Returns `409 Conflict` in `immediate` / `work_window` modes — the policy already dispatches automatically.
 
+### 10. Deployment-wide default policy (amendment, 2026-06-12 — issue #45)
+
+§9 made every session carry its own `dispatch_policy`, forcing operators to repeat the same schedule on every new session. This amendment adds a single process-global default that sessions inherit, without introducing a `Workspace` entity (ADR-0006 multi-tenancy stays deferred — "workspace-level" here means one default for the whole instance, exposed at the bare `/v1/dispatch_policy`).
+
+- **Optional override + live inheritance.** `Session.dispatch_policy` becomes `DispatchPolicy | None` (`None` = inherit). The effective policy is resolved at *each* dispatch evaluation — `resolve_effective_policy(session, deployment) = session.dispatch_policy or deployment.default or ImmediatePolicy()`. Changing the deployment default takes effect immediately for every inheriting session; there is no snapshot at create time. A pinned per-session policy always wins over the default.
+
+- **Singleton holder.** `DeploymentDispatchPolicy` is a mutable holder (mirrors `SessionStore`), built once in the composition root and injected by reference into both the HTTP routes and the `Dispatcher`, so a `PUT` is observed live by the running loop.
+
+- **`dispatch_policy.default.updated`.** `PUT /v1/dispatch_policy` emits this under a reserved session id (`__deployment__`) so the singleton is rebuilt on restart by replaying that log (`bootstrap_deployment_policy`, run in the app lifespan). The reserved id starts with `__` and is filtered out of `list_session_ids` so it never surfaces as a real session.
+
+- **`dispatch_policy.cleared`.** `DELETE /v1/sessions/{id}/dispatch_policy` clears the per-session override (back to inheriting) and emits this; replay resets `Session.dispatch_policy` to `None`. Clearing is idempotent — a DELETE on a session that already inherits is a 200 no-op, not a 409.
+
+- **Manual-trigger interaction.** `POST /trigger` and `manual_drain_remaining` stay per session even when the effective policy is inherited: a `manual` deployment default is drained per session, and the trigger resolves the *effective* policy so an inheriting session can be drained (override `immediate` over a `manual` default still 409s).
+
 ## Consequences
 
 **Wins:**

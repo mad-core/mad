@@ -40,6 +40,15 @@ from mad.core.orchestration.use_cases.cancel_task import (
     CancelTaskInput,
     CancelTaskUseCase,
 )
+from mad.core.orchestration.use_cases.clear_dispatch_policy import (
+    ClearDispatchPolicyInput,
+    ClearDispatchPolicyUseCase,
+)
+from mad.core.orchestration.use_cases.deployment_dispatch_policy import (
+    GetDeploymentDispatchPolicyUseCase,
+    SetDeploymentDispatchPolicyInput,
+    SetDeploymentDispatchPolicyUseCase,
+)
 from mad.core.orchestration.use_cases.enqueue_task import (
     EnqueueTaskInput,
     EnqueueTaskUseCase,
@@ -143,6 +152,30 @@ class DispatchPolicyResponse(BaseModel):
     policy: dict[str, Any]
 
 
+class DeploymentDispatchPolicyResponse(BaseModel):
+    """The deployment-wide default policy (issue #45).
+
+    ``policy`` is the canonical serialized form. When no deployment policy
+    has been configured, this echoes ``{"kind": "immediate"}`` — the
+    effective default that inheriting sessions fall back to.
+    """
+
+    policy: dict[str, Any]
+
+
+class ClearDispatchPolicyResponse(BaseModel):
+    """Returned after ``DELETE`` clears a session's override (issue #45).
+
+    ``inherited`` is always ``True`` (the session now inherits);
+    ``effective_policy`` is the policy that governs the session after the
+    clear — the deployment default, or ``immediate`` when none is set.
+    """
+
+    session_id: str
+    inherited: bool = True
+    effective_policy: dict[str, Any]
+
+
 class TriggerManualDispatchResponse(BaseModel):
     session_id: str
     drained: int = Field(..., description="Number of currently-queued tasks the trigger covers.")
@@ -161,6 +194,10 @@ def _projection(request: Request):
 
 def _emitter(request: Request):
     return request.app.state.event_emitter
+
+
+def _deployment_policy(request: Request):
+    return request.app.state.deployment_policy
 
 
 # -- Routes --------------------------------------------------------------------
@@ -302,6 +339,78 @@ async def trigger_manual_dispatch(
     use_case = TriggerManualDispatchUseCase(
         sessions_index=_store(request).sessions,
         task_queue=_projection(request),
+        deployment=_deployment_policy(request),
     )
     output = use_case.execute(TriggerManualDispatchInput(session_id=session_id))
     return TriggerManualDispatchResponse(session_id=output.session_id, drained=output.drained)
+
+
+# -- Deployment-wide dispatch policy (issue #45) ------------------------------
+
+
+@router.get(
+    "/v1/dispatch_policy",
+    response_model=DeploymentDispatchPolicyResponse,
+)
+async def get_deployment_dispatch_policy(request: Request) -> DeploymentDispatchPolicyResponse:
+    """Read the deployment-wide default dispatch policy.
+
+    Returns the configured singleton, or ``{"kind": "immediate"}`` when no
+    deployment policy has been set (the effective fallback every inheriting
+    session uses).
+    """
+    use_case = GetDeploymentDispatchPolicyUseCase(deployment=_deployment_policy(request))
+    output = use_case.execute()
+    return DeploymentDispatchPolicyResponse(policy=policy_to_dict(output.policy))
+
+
+@router.put(
+    "/v1/dispatch_policy",
+    response_model=DeploymentDispatchPolicyResponse,
+)
+async def set_deployment_dispatch_policy(
+    payload: DispatchPolicyRequest,
+    request: Request,
+) -> DeploymentDispatchPolicyResponse:
+    """Set the deployment-wide default dispatch policy.
+
+    Reuses the same discriminated union as the per-session ``PATCH``
+    (``immediate`` / ``work_window`` / ``manual``). Every inheriting session
+    honours the new default on the next dispatch evaluation (live
+    inheritance — no restart, no per-session re-PATCH). Emits
+    ``dispatch_policy.default.updated`` so the singleton is rebuilt on
+    restart via JSONL replay (hard rule 6).
+    """
+    policy = policy_from_dict(payload.model_dump())
+    use_case = SetDeploymentDispatchPolicyUseCase(
+        deployment=_deployment_policy(request),
+        emitter=_emitter(request),
+    )
+    output = await use_case.execute(SetDeploymentDispatchPolicyInput(policy=policy))
+    return DeploymentDispatchPolicyResponse(policy=policy_to_dict(output.policy))
+
+
+@router.delete(
+    "/v1/sessions/{session_id}/dispatch_policy",
+    response_model=ClearDispatchPolicyResponse,
+)
+async def clear_dispatch_policy(
+    session_id: str,
+    request: Request,
+) -> ClearDispatchPolicyResponse:
+    """Clear a session's per-session override so it re-inherits the default.
+
+    Idempotent: clearing a session that already inherits is a no-op success
+    (200), not a 409. Emits ``dispatch_policy.cleared`` so the cleared state
+    survives a restart via JSONL replay.
+    """
+    use_case = ClearDispatchPolicyUseCase(
+        sessions_index=_store(request).sessions,
+        deployment=_deployment_policy(request),
+        emitter=_emitter(request),
+    )
+    output = await use_case.execute(ClearDispatchPolicyInput(session_id=session_id))
+    return ClearDispatchPolicyResponse(
+        session_id=output.session_id,
+        effective_policy=policy_to_dict(output.effective_policy),
+    )

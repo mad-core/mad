@@ -22,6 +22,7 @@ from mad.core.events.domain.event import Event
 from mad.core.events.emitter import EventEmitter
 from mad.core.events.ports.event_bus import EventBus
 from mad.core.events.ports.event_log_query import EventLogQuery
+from mad.core.orchestration.domain.deployment_policy import DeploymentDispatchPolicy
 from mad.core.orchestration.ports.clock import Clock
 from mad.core.sessions import SessionStore
 from mad.core.sessions.ports.outbound.session_repository import SessionRepository
@@ -37,6 +38,7 @@ def build_dependencies() -> tuple[
     EventEmitter,
     InMemoryTaskProjection,
     Clock,
+    DeploymentDispatchPolicy,
 ]:
     """Return the production defaults for every injected port."""
     store = SessionStore()
@@ -45,6 +47,7 @@ def build_dependencies() -> tuple[
     emitter = EventEmitter(store=repo, bus=bus, on_emit=touch_session(store))
     projection = InMemoryTaskProjection()
     clock: Clock = SystemClock()
+    deployment_policy = DeploymentDispatchPolicy()
     return (
         store,
         repo,
@@ -54,6 +57,7 @@ def build_dependencies() -> tuple[
         emitter,
         projection,
         clock,
+        deployment_policy,
     )
 
 

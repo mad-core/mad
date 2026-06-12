@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from mad.core.orchestration.domain.dispatch_policy import ManualPolicy
 from mad.core.sessions.domain.rehydrate import rehydrate_from_events
 
 
@@ -80,6 +81,51 @@ def test_rehydrate_skips_unparseable_timestamps_but_preserves_status() -> None:
     assert s.status == "idle"
     assert s.created_at == datetime(2026, 5, 6, 9, 0, tzinfo=UTC)
     assert s.updated_at == datetime(2026, 5, 6, 9, 30, tzinfo=UTC)
+
+
+def test_rehydrate_dispatch_policy_cleared_resets_override_to_none() -> None:
+    """Issue #45: replaying ``dispatch_policy.cleared`` after a prior
+    ``dispatch_policy.updated`` must drop the per-session override back to
+    ``None`` so the session inherits the deployment default again."""
+    events = [
+        {
+            "type": "session.created",
+            "timestamp": "2026-05-06T09:00:00+00:00",
+            "agent": "t",
+        },
+        {
+            "type": "dispatch_policy.updated",
+            "timestamp": "2026-05-06T09:05:00+00:00",
+            "kind": "manual",
+        },
+        {
+            "type": "dispatch_policy.cleared",
+            "timestamp": "2026-05-06T09:10:00+00:00",
+        },
+    ]
+    s = rehydrate_from_events("sesn_x", events)
+
+    assert s.dispatch_policy is None
+
+
+def test_rehydrate_dispatch_policy_without_clear_keeps_override() -> None:
+    """Negative twin: with no ``dispatch_policy.cleared`` in the log the
+    override survives — clearing only resets when the event is present."""
+    events = [
+        {
+            "type": "session.created",
+            "timestamp": "2026-05-06T09:00:00+00:00",
+            "agent": "t",
+        },
+        {
+            "type": "dispatch_policy.updated",
+            "timestamp": "2026-05-06T09:05:00+00:00",
+            "kind": "manual",
+        },
+    ]
+    s = rehydrate_from_events("sesn_x", events)
+
+    assert isinstance(s.dispatch_policy, ManualPolicy)
 
 
 def test_rehydrate_empty_events_yields_epoch_timestamps() -> None:

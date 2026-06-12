@@ -315,3 +315,287 @@ def test_openapi_documents_the_two_dispatch_policy_routes(client: TestClient) ->
     trigger_schema = spec["components"]["schemas"][trigger_ref.rsplit("/", 1)[-1]]
     assert "drained" in trigger_schema["properties"]
     assert trigger_schema["properties"]["drained"]["type"] == "integer"
+
+
+# =============================================================================
+# Deployment-wide dispatch policy (issue #45)
+# =============================================================================
+
+# -- PUT /v1/dispatch_policy --------------------------------------------------
+
+
+def test_put_deployment_dispatch_policy_manual_round_trips(client: TestClient) -> None:
+    r = client.put("/v1/dispatch_policy", json={"kind": "manual"})
+
+    assert r.status_code == 200, r.text
+    assert r.json() == {"policy": {"kind": "manual"}}
+
+
+def test_put_deployment_dispatch_policy_work_window_serializes_full_shape(
+    client: TestClient,
+) -> None:
+    r = client.put(
+        "/v1/dispatch_policy",
+        json={
+            "kind": "work_window",
+            "windows": [
+                {
+                    "start": "18:00",
+                    "end": "08:00",
+                    "timezone": "America/Mexico_City",
+                    "days": ["mon", "tue", "wed", "thu", "fri"],
+                }
+            ],
+        },
+    )
+
+    assert r.status_code == 200, r.text
+    policy = r.json()["policy"]
+    assert policy["kind"] == "work_window"
+    assert len(policy["windows"]) == 1
+    w = policy["windows"][0]
+    assert w["start"] == "18:00"
+    assert w["end"] == "08:00"
+    assert w["timezone"] == "America/Mexico_City"
+    assert sorted(w["days"]) == ["fri", "mon", "thu", "tue", "wed"]
+
+
+def test_put_deployment_dispatch_policy_empty_windows_returns_422(
+    client: TestClient,
+) -> None:
+    """Negative twin: ``min_length=1`` on the shared discriminated union
+    rejects a zero-window payload before the domain validator sees it."""
+    r = client.put("/v1/dispatch_policy", json={"kind": "work_window", "windows": []})
+
+    assert r.status_code == 422
+
+
+def test_put_deployment_dispatch_policy_unknown_timezone_returns_422(
+    client: TestClient,
+) -> None:
+    """Negative twin: a string Pydantic accepts but ``zoneinfo`` rejects is
+    an operator typo — 422 with the bad tz in detail, not a 500 (mirrors
+    the per-session PATCH twin)."""
+    r = client.put(
+        "/v1/dispatch_policy",
+        json={
+            "kind": "work_window",
+            "windows": [{"start": "18:00", "end": "08:00", "timezone": "Atlantis/Capital"}],
+        },
+    )
+
+    assert r.status_code == 422
+    assert "Atlantis/Capital" in r.json()["detail"]
+
+
+# -- GET /v1/dispatch_policy --------------------------------------------------
+
+
+def test_get_deployment_dispatch_policy_unset_returns_immediate(client: TestClient) -> None:
+    """With no deployment default configured, GET reports the effective
+    fallback every inheriting session uses: ``immediate``."""
+    r = client.get("/v1/dispatch_policy")
+
+    assert r.status_code == 200, r.text
+    assert r.json() == {"policy": {"kind": "immediate"}}
+
+
+def test_get_deployment_dispatch_policy_reflects_a_prior_put(client: TestClient) -> None:
+    """Round trip: a PUT-set default is observable on the next GET (the
+    holder is read live, no restart needed)."""
+    assert client.put("/v1/dispatch_policy", json={"kind": "manual"}).status_code == 200
+
+    r = client.get("/v1/dispatch_policy")
+
+    assert r.status_code == 200
+    assert r.json() == {"policy": {"kind": "manual"}}
+
+
+# -- Inheritance end-to-end ---------------------------------------------------
+
+
+def test_session_inherits_manual_deployment_default_so_trigger_is_202(
+    client: TestClient, session_payload: dict
+) -> None:
+    """A freshly created session with NO per-session PATCH inherits the
+    deployment default. With the default set to ``manual``, an explicit
+    trigger is applicable → 202."""
+    assert client.put("/v1/dispatch_policy", json={"kind": "manual"}).status_code == 200
+    session_id = _create_session(client, session_payload)
+
+    r = client.post(f"/v1/sessions/{session_id}/dispatch_policy/trigger")
+
+    assert r.status_code == 202, r.text
+    assert r.json() == {"session_id": session_id, "drained": 0}
+
+
+def test_session_override_immediate_wins_over_manual_default_so_trigger_is_409(
+    client: TestClient, session_payload: dict
+) -> None:
+    """Negative twin: the per-session override beats the deployment default.
+    Deployment default ``manual`` but the session is PATCHed to
+    ``immediate`` → trigger is misconfiguration → 409 naming the effective
+    ``immediate`` policy."""
+    assert client.put("/v1/dispatch_policy", json={"kind": "manual"}).status_code == 200
+    session_id = _create_session(client, session_payload)
+    assert (
+        client.patch(
+            f"/v1/sessions/{session_id}/dispatch_policy", json={"kind": "immediate"}
+        ).status_code
+        == 200
+    )
+
+    r = client.post(f"/v1/sessions/{session_id}/dispatch_policy/trigger")
+
+    assert r.status_code == 409
+    assert "immediate" in r.json()["detail"]
+
+
+# -- DELETE /v1/sessions/{id}/dispatch_policy ---------------------------------
+
+
+def test_delete_dispatch_policy_clears_override_and_reinherits_manual_default(
+    client: TestClient, session_payload: dict
+) -> None:
+    """PUT deployment manual; PATCH session to immediate; DELETE the
+    override → the session re-inherits ``manual`` and a trigger is again
+    202. The DELETE body reports the now-effective inherited policy."""
+    assert client.put("/v1/dispatch_policy", json={"kind": "manual"}).status_code == 200
+    session_id = _create_session(client, session_payload)
+    assert (
+        client.patch(
+            f"/v1/sessions/{session_id}/dispatch_policy", json={"kind": "immediate"}
+        ).status_code
+        == 200
+    )
+
+    r = client.delete(f"/v1/sessions/{session_id}/dispatch_policy")
+
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["session_id"] == session_id
+    assert body["inherited"] is True
+    assert body["effective_policy"] == {"kind": "manual"}
+
+    # And the behavioural proof: trigger is applicable again.
+    trigger = client.post(f"/v1/sessions/{session_id}/dispatch_policy/trigger")
+    assert trigger.status_code == 202
+    assert trigger.json()["drained"] == 0
+
+
+def test_delete_dispatch_policy_on_inheriting_session_is_200_noop(
+    client: TestClient, session_payload: dict
+) -> None:
+    """Idempotent no-op twin: DELETE on a session that never set an override
+    is a 200 success, not a 409. With no deployment default, the effective
+    policy is ``immediate``."""
+    session_id = _create_session(client, session_payload)
+
+    r = client.delete(f"/v1/sessions/{session_id}/dispatch_policy")
+
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["session_id"] == session_id
+    assert body["inherited"] is True
+    assert body["effective_policy"] == {"kind": "immediate"}
+
+
+def test_delete_dispatch_policy_unknown_session_returns_404(client: TestClient) -> None:
+    r = client.delete("/v1/sessions/sesn_missing/dispatch_policy")
+
+    assert r.status_code == 404
+
+
+# -- Restart / rehydration (hard rule 6) --------------------------------------
+
+
+def test_deployment_default_survives_app_restart_via_bootstrap_replay(
+    fake_launcher,
+    tmp_sessions_dir,
+    tmp_workspaces_dir,
+) -> None:
+    """A PUT emits ``dispatch_policy.default.updated`` under the reserved
+    deployment log; a fresh app MUST replay it on bootstrap. Without this
+    an operator-set deployment default would be lost on every redeploy.
+
+    ``bootstrap_deployment_policy`` runs in the lifespan, so the second
+    boot enters the TestClient context manager to trigger it."""
+    # First boot: set the deployment default to manual, then shut down.
+    client_a = TestClient(create_app(launcher_factory=lambda name: fake_launcher))
+    assert client_a.put("/v1/dispatch_policy", json={"kind": "manual"}).status_code == 200
+    client_a.close()
+
+    # Second boot: fresh app, same sessions dir. Entering the context
+    # manager runs the lifespan, which calls bootstrap_deployment_policy.
+    with TestClient(create_app(launcher_factory=lambda name: fake_launcher)) as client_b:
+        r = client_b.get("/v1/dispatch_policy")
+        assert r.status_code == 200
+        assert r.json() == {"policy": {"kind": "manual"}}
+
+
+def test_cleared_override_survives_app_restart_via_log_replay(
+    fake_launcher,
+    tmp_sessions_dir,
+    tmp_workspaces_dir,
+    session_payload: dict,
+) -> None:
+    """A DELETE emits ``dispatch_policy.cleared``; rehydration MUST replay
+    it so the session goes back to inheriting. Create a session, PATCH it
+    to manual, then DELETE (clear) and shut down. A fresh app rehydrates
+    the session with NO override (no deployment default set), so a trigger
+    is 409 — proving the ``dispatch_policy.cleared`` event was replayed
+    over the earlier ``dispatch_policy.updated``."""
+    client_a = TestClient(create_app(launcher_factory=lambda name: fake_launcher))
+    session_id = _create_session(client_a, session_payload)
+    assert (
+        client_a.patch(
+            f"/v1/sessions/{session_id}/dispatch_policy", json={"kind": "manual"}
+        ).status_code
+        == 200
+    )
+    assert client_a.delete(f"/v1/sessions/{session_id}/dispatch_policy").status_code == 200
+    client_a.close()
+
+    # Second boot: fresh app, same sessions_dir. GET lazily rehydrates the
+    # session from JSONL (replaying updated→cleared back to None override).
+    client_b = TestClient(create_app(launcher_factory=lambda name: fake_launcher))
+    assert client_b.get(f"/v1/sessions/{session_id}").status_code == 200
+
+    # No deployment default set on this fresh app → effective is immediate →
+    # trigger is misconfiguration → 409. In manual mode this would be 202.
+    r = client_b.post(f"/v1/sessions/{session_id}/dispatch_policy/trigger")
+    assert r.status_code == 409
+    assert "immediate" in r.json()["detail"]
+    client_b.close()
+
+
+# -- OpenAPI contract (heuristic 5) for the issue #45 routes ------------------
+
+
+def test_openapi_documents_put_and_delete_dispatch_policy_routes(client: TestClient) -> None:
+    spec = client.get("/openapi.json").json()
+    paths = spec["paths"]
+    schemas = spec["components"]["schemas"]
+
+    deployment_path = "/v1/dispatch_policy"
+    clear_path = "/v1/sessions/{session_id}/dispatch_policy"
+
+    assert deployment_path in paths
+
+    # PUT body is the SAME discriminated union as the per-session PATCH.
+    put = paths[deployment_path]["put"]
+    assert put["requestBody"]["required"] is True
+    body_schema = put["requestBody"]["content"]["application/json"]["schema"]
+    refs = {item["$ref"].rsplit("/", 1)[-1] for item in body_schema.get("oneOf", [])}
+    assert refs == {"ImmediatePolicyRequest", "WorkWindowPolicyRequest", "ManualPolicyRequest"}
+    assert body_schema["discriminator"]["propertyName"] == "kind"
+    assert "200" in put["responses"]
+
+    # DELETE clears a session override; response references ClearDispatchPolicyResponse.
+    delete = paths[clear_path]["delete"]
+    assert "200" in delete["responses"]
+    clear_ref = delete["responses"]["200"]["content"]["application/json"]["schema"]["$ref"]
+    clear_schema = schemas[clear_ref.rsplit("/", 1)[-1]]
+    assert "effective_policy" in clear_schema["properties"]
+    assert "inherited" in clear_schema["properties"]
+    assert "session_id" in clear_schema["properties"]
