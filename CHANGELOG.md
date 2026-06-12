@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.5.7 (2026-06-12)
+
+### Bug Fixes
+
+- **cli**: Ship mad.core.sessions in the published package
+  ([`8cfb12f`](https://github.com/jlsaco/mad/commit/8cfb12f281efc08464349af4479759c890cb782b))
+
+
 ## v0.5.6 (2026-05-19)
 
 ### Bug Fixes
