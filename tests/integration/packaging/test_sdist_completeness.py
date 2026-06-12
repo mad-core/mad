@@ -65,9 +65,7 @@ def sdist_members(tmp_path_factory: pytest.TempPathFactory) -> list[str]:
         )
 
     archives = list(out_dir.glob("*.tar.gz"))
-    assert len(archives) == 1, (
-        f"Expected exactly one .tar.gz in {out_dir}, found: {archives}"
-    )
+    assert len(archives) == 1, f"Expected exactly one .tar.gz in {out_dir}, found: {archives}"
 
     with tarfile.open(archives[0]) as tf:
         return tf.getnames()
@@ -133,11 +131,7 @@ def test_runtime_sessions_dir_absent_from_sdist(sdist_members: list[str]) -> Non
     """
     # Runtime sessions/ paths look like "mad-bros-0.5.6/sessions/<something>".
     # They do NOT contain "mad/core/sessions" — that is the source package.
-    leaked = [
-        m
-        for m in sdist_members
-        if "/sessions/" in m and "mad/core/sessions" not in m
-    ]
+    leaked = [m for m in sdist_members if "/sessions/" in m and "mad/core/sessions" not in m]
     assert leaked == [], (
         "Top-level runtime 'sessions/' directory leaked into the sdist.\n"
         "The '/sessions' exclusion in pyproject.toml is not working.\n"
