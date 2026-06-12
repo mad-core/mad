@@ -27,7 +27,9 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
 from typing import Any
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -40,6 +42,7 @@ from mad.adapters.inbound.http.routes.sessions import (
     CreateSessionRequest,
     SessionDetailResponse,
 )
+from mad.core.orchestration.domain.task import Task
 from support.launchers import ScriptedLauncher
 
 # --- helpers -----------------------------------------------------------------
@@ -67,6 +70,26 @@ async def _make_session(session: ClientSession) -> str:
         {"payload": {"agent": _AGENT, "resources": [_FILE_RESOURCE]}},
     )
     return _dict_result(result)["session_id"]
+
+
+def _inject_queued(client: TestClient, session_id: str, *, content: str) -> Task:
+    """Place a Task on the in-memory projection's queued list.
+
+    The ``client`` fixture has no lifespan, so the dispatcher does not run
+    and ``mad_enqueue_task`` (which only emits ``task.queued``) never feeds
+    the projection. This injects the same surface the dispatcher would —
+    identical to ``tests/integration/api/test_orchestration_http.py``.
+    """
+    projection = client.app.state.task_projection
+    task = Task(
+        task_id=uuid4(),
+        session_id=session_id,
+        content=content,
+        scheduled_for="now",
+        created_at=datetime(2026, 5, 8, tzinfo=UTC),
+    )
+    projection._queued.setdefault(session_id, []).append(task)
+    return task
 
 
 def _normalise_schema(node: Any) -> Any:
@@ -218,28 +241,56 @@ async def test_delete_session_unknown_id_errors(client: TestClient) -> None:
     assert "sesn_missing" in result.content[0].text  # type: ignore[union-attr]
 
 
-# --- tool surface: exactly the five infrastructure tools, no event tools -----
+# --- tool surface: exactly the full request/response route set --------------
 
 
-async def test_tool_surface_is_exactly_the_five_session_tools(client: TestClient) -> None:
+async def test_tool_surface_is_the_full_request_response_route_set(client: TestClient) -> None:
+    """One MCP tool per request/response HTTP route (hard rule 13, ADR-0012).
+
+    The list is kept explicit so an accidental tool removal (or a new
+    route landing without its tool) breaks this test rather than passing
+    silently. The only HTTP route deliberately absent is the streaming
+    SSE surface ``GET /v1/events/stream``.
+    """
     async with _mcp_session(client) as s:
         tools = await s.list_tools()
     names = sorted(t.name for t in tools.tools)
-    assert names == [
-        "mad_create_session",
-        "mad_delete_session",
-        "mad_get_session",
-        "mad_list_sessions",
-        "mad_send_message",
-    ]
+    assert names == sorted(
+        [
+            "mad_create_session",
+            "mad_send_message",
+            "mad_list_sessions",
+            "mad_get_session",
+            "mad_delete_session",
+            "mad_cleanup_sessions",
+            "mad_enqueue_task",
+            "mad_list_tasks",
+            "mad_cancel_task",
+            "mad_set_session_dispatch_policy",
+            "mad_clear_session_dispatch_policy",
+            "mad_trigger_dispatch",
+            "mad_get_deployment_dispatch_policy",
+            "mad_set_deployment_dispatch_policy",
+            "mad_query_events",
+        ]
+    )
 
 
-async def test_no_event_or_hook_tools_are_exposed(client: TestClient) -> None:
-    """Negative twin of the surface test: telemetry stays on SSE (ADR-0004)."""
+async def test_streaming_and_hook_telemetry_are_not_tools(client: TestClient) -> None:
+    """Negative twin of the surface test — the ADR-0012 carve-out.
+
+    The streaming SSE surface (``GET /v1/events/stream``) and the hook
+    firehose are operator telemetry, NOT request/response tools, so no
+    tool name may contain ``stream`` or ``hook``. The *bounded* historical
+    query ``GET /v1/events`` IS a legitimate tool (``mad_query_events``),
+    so it is explicitly allowed here and must not be read as a leak.
+    """
     async with _mcp_session(client) as s:
         tools = await s.list_tools()
-    leaked = [t.name for t in tools.tools if "event" in t.name or "hook" in t.name]
+    names = {t.name for t in tools.tools}
+    leaked = [n for n in names if "stream" in n or "hook" in n]
     assert leaked == []
+    assert "mad_query_events" in names
 
 
 # --- transport: /mcp is mounted and speaks Streamable HTTP -------------------
@@ -327,3 +378,328 @@ def test_mcp_tool_models_match_fastapi_openapi_components(client: TestClient) ->
         {k: v for k, v in SessionDetailResponse.model_json_schema().items() if k != "$defs"}
     )
     assert sdr_component == sdr_model_self
+
+
+# =============================================================================
+# Behavioural tests for the 10 new tools (ADR-0012). Each tool calls the same
+# use case as its HTTP route, so the assertions mirror the HTTP integration
+# suites (test_orchestration_http.py / test_dispatch_policy_http.py). Every
+# happy path has a negative twin (rule 1); decoded results are pinned with
+# ``==`` (rule 2). The ``client`` fixture has no lifespan, so the dispatcher
+# never runs — queued state is injected the same way the HTTP suites do.
+# =============================================================================
+
+
+# --- tool: mad_cleanup_sessions ----------------------------------------------
+
+
+async def test_cleanup_sessions_dry_run_reports_examined_and_would_delete(
+    client: TestClient,
+) -> None:
+    async with _mcp_session(client) as s:
+        session_id = await _make_session(s)
+        # Cutoff captured AFTER creation: strictly later than the session's
+        # ``updated_at`` (so it matches) yet not in the future (so the tool's
+        # ``older_than is not valid`` guard does not fire).
+        cutoff = datetime.now(UTC).isoformat()
+        body = _dict_result(
+            await s.call_tool(
+                "mad_cleanup_sessions",
+                {"payload": {"older_than": cutoff, "dry_run": True}},
+            )
+        )
+    assert body["examined"] == 1
+    assert body["would_delete"] == [session_id]
+    assert body["deleted_session_ids"] == []
+
+
+async def test_cleanup_sessions_future_cutoff_errors(client: TestClient) -> None:
+    """Negative twin: an ``older_than`` in the future is invalid — the tool
+    raises ``ValueError('older_than is not valid')`` (HTTP route returns 400).
+    """
+    future = (datetime.now(UTC) + timedelta(days=365)).isoformat()
+    async with _mcp_session(client) as s:
+        await _make_session(s)
+        result = await s.call_tool(
+            "mad_cleanup_sessions",
+            {"payload": {"older_than": future, "dry_run": True}},
+        )
+    assert result.isError is True
+    assert "older_than is not valid" in result.content[0].text  # type: ignore[union-attr]
+
+
+# --- tool: mad_enqueue_task --------------------------------------------------
+
+
+async def test_enqueue_task_returns_task_id_and_queued_status(client: TestClient) -> None:
+    async with _mcp_session(client) as s:
+        session_id = await _make_session(s)
+        body = _dict_result(
+            await s.call_tool(
+                "mad_enqueue_task",
+                {"session_id": session_id, "payload": {"content": "do the thing"}},
+            )
+        )
+    assert body["session_id"] == session_id
+    assert body["status"] == "queued"
+    assert body["scheduled_for"] == "now"
+    assert UUID(body["task_id"])  # parses as a real UUID
+
+
+async def test_enqueue_task_unknown_session_errors(client: TestClient) -> None:
+    async with _mcp_session(client) as s:
+        result = await s.call_tool(
+            "mad_enqueue_task",
+            {"session_id": "sesn_missing", "payload": {"content": "x"}},
+        )
+    assert result.isError is True
+    assert "sesn_missing" in result.content[0].text  # type: ignore[union-attr]
+
+
+# --- tool: mad_list_tasks ----------------------------------------------------
+
+
+async def test_list_tasks_returns_the_single_queued_task(client: TestClient) -> None:
+    async with _mcp_session(client) as s:
+        session_id = await _make_session(s)
+        task = _inject_queued(client, session_id, content="queued work")
+        body = _dict_result(await s.call_tool("mad_list_tasks", {"session_id": session_id}))
+    assert body["in_flight"] is None
+    assert len(body["queued"]) == 1
+    assert body["queued"][0]["task_id"] == str(task.task_id)
+    assert body["queued"][0]["content"] == "queued work"
+
+
+async def test_list_tasks_unknown_session_errors(client: TestClient) -> None:
+    async with _mcp_session(client) as s:
+        result = await s.call_tool("mad_list_tasks", {"session_id": "sesn_missing"})
+    assert result.isError is True
+    assert "sesn_missing" in result.content[0].text  # type: ignore[union-attr]
+
+
+# --- tool: mad_cancel_task ---------------------------------------------------
+
+
+async def test_cancel_task_returns_cancelled_status_and_task_id(client: TestClient) -> None:
+    async with _mcp_session(client) as s:
+        session_id = await _make_session(s)
+        task = _inject_queued(client, session_id, content="will be cancelled")
+        body = _dict_result(
+            await s.call_tool(
+                "mad_cancel_task",
+                {"session_id": session_id, "task_id": str(task.task_id)},
+            )
+        )
+    assert body == {"status": "cancelled", "task_id": str(task.task_id)}
+
+
+async def test_cancel_task_unknown_task_errors(client: TestClient) -> None:
+    """Negative twin: cancelling a task that was never queued raises
+    (HTTP route returns 404)."""
+    task_id = uuid4()
+    async with _mcp_session(client) as s:
+        session_id = await _make_session(s)
+        result = await s.call_tool(
+            "mad_cancel_task",
+            {"session_id": session_id, "task_id": str(task_id)},
+        )
+    assert result.isError is True
+    # Pin the contract: the failure names the missing task, not just "something broke".
+    assert str(task_id) in result.content[0].text  # type: ignore[union-attr]
+
+
+# --- tool: mad_set_session_dispatch_policy -----------------------------------
+
+
+async def test_set_session_dispatch_policy_manual_round_trips(client: TestClient) -> None:
+    async with _mcp_session(client) as s:
+        session_id = await _make_session(s)
+        body = _dict_result(
+            await s.call_tool(
+                "mad_set_session_dispatch_policy",
+                {"session_id": session_id, "payload": {"kind": "manual"}},
+            )
+        )
+    assert body["session_id"] == session_id
+    assert body["policy"] == {"kind": "manual"}
+
+
+async def test_set_session_dispatch_policy_empty_windows_errors(client: TestClient) -> None:
+    """Negative twin: a ``work_window`` with zero windows is rejected
+    (HTTP route returns 422)."""
+    async with _mcp_session(client) as s:
+        session_id = await _make_session(s)
+        result = await s.call_tool(
+            "mad_set_session_dispatch_policy",
+            {"session_id": session_id, "payload": {"kind": "work_window", "windows": []}},
+        )
+    assert result.isError is True
+    # Pin the cause: the zero-windows validation, not an unrelated failure.
+    assert "windows" in result.content[0].text  # type: ignore[union-attr]
+
+
+# --- tool: mad_clear_session_dispatch_policy ---------------------------------
+
+
+async def test_clear_session_dispatch_policy_reinherits_immediate(client: TestClient) -> None:
+    """After pinning manual then clearing, with no deployment default the
+    session re-inherits the ``immediate`` fallback."""
+    async with _mcp_session(client) as s:
+        session_id = await _make_session(s)
+        await s.call_tool(
+            "mad_set_session_dispatch_policy",
+            {"session_id": session_id, "payload": {"kind": "manual"}},
+        )
+        body = _dict_result(
+            await s.call_tool(
+                "mad_clear_session_dispatch_policy",
+                {"session_id": session_id},
+            )
+        )
+    assert body["session_id"] == session_id
+    assert body["inherited"] is True
+    assert body["effective_policy"] == {"kind": "immediate"}
+
+
+async def test_clear_session_dispatch_policy_unknown_session_errors(client: TestClient) -> None:
+    async with _mcp_session(client) as s:
+        result = await s.call_tool(
+            "mad_clear_session_dispatch_policy",
+            {"session_id": "sesn_missing"},
+        )
+    assert result.isError is True
+    assert "sesn_missing" in result.content[0].text  # type: ignore[union-attr]
+
+
+# --- tool: mad_trigger_dispatch ----------------------------------------------
+
+
+async def test_trigger_dispatch_manual_drains_queued_tasks(client: TestClient) -> None:
+    async with _mcp_session(client) as s:
+        session_id = await _make_session(s)
+        await s.call_tool(
+            "mad_set_session_dispatch_policy",
+            {"session_id": session_id, "payload": {"kind": "manual"}},
+        )
+        _inject_queued(client, session_id, content="A")
+        _inject_queued(client, session_id, content="B")
+        body = _dict_result(await s.call_tool("mad_trigger_dispatch", {"session_id": session_id}))
+    assert body == {"session_id": session_id, "drained": 2}
+
+
+async def test_trigger_dispatch_immediate_mode_errors(client: TestClient) -> None:
+    """Negative twin: in the default ``immediate`` mode the dispatcher
+    already fires, so an explicit trigger is misconfiguration and raises
+    (HTTP route returns 409)."""
+    async with _mcp_session(client) as s:
+        session_id = await _make_session(s)
+        result = await s.call_tool("mad_trigger_dispatch", {"session_id": session_id})
+    assert result.isError is True
+    assert "immediate" in result.content[0].text  # type: ignore[union-attr]
+
+
+# --- tool: mad_get_deployment_dispatch_policy --------------------------------
+
+
+async def test_get_deployment_dispatch_policy_unset_is_immediate(client: TestClient) -> None:
+    async with _mcp_session(client) as s:
+        body = _dict_result(await s.call_tool("mad_get_deployment_dispatch_policy", {}))
+    assert body == {"policy": {"kind": "immediate"}}
+
+
+async def test_get_deployment_dispatch_policy_reflects_live_state(client: TestClient) -> None:
+    """Twin / second-state: after a PUT-equivalent set to manual, GET reads
+    live state, not a constant."""
+    async with _mcp_session(client) as s:
+        await s.call_tool(
+            "mad_set_deployment_dispatch_policy",
+            {"payload": {"kind": "manual"}},
+        )
+        body = _dict_result(await s.call_tool("mad_get_deployment_dispatch_policy", {}))
+    assert body == {"policy": {"kind": "manual"}}
+
+
+# --- tool: mad_set_deployment_dispatch_policy --------------------------------
+
+
+async def test_set_deployment_dispatch_policy_manual_is_observable_on_get(
+    client: TestClient,
+) -> None:
+    async with _mcp_session(client) as s:
+        set_body = _dict_result(
+            await s.call_tool(
+                "mad_set_deployment_dispatch_policy",
+                {"payload": {"kind": "manual"}},
+            )
+        )
+        get_body = _dict_result(await s.call_tool("mad_get_deployment_dispatch_policy", {}))
+    assert set_body == {"policy": {"kind": "manual"}}
+    assert get_body == {"policy": {"kind": "manual"}}
+
+
+async def test_set_deployment_dispatch_policy_empty_windows_errors(client: TestClient) -> None:
+    """Negative twin: a malformed ``work_window`` (zero windows) is rejected
+    (HTTP route returns 422)."""
+    async with _mcp_session(client) as s:
+        result = await s.call_tool(
+            "mad_set_deployment_dispatch_policy",
+            {"payload": {"kind": "work_window", "windows": []}},
+        )
+    assert result.isError is True
+    # Pin the cause: the zero-windows validation, not an unrelated failure.
+    assert "windows" in result.content[0].text  # type: ignore[union-attr]
+
+
+# --- tool: mad_query_events --------------------------------------------------
+
+
+async def test_query_events_filters_to_the_session_created_event(client: TestClient) -> None:
+    async with _mcp_session(client) as s:
+        session_id = await _make_session(s)
+        body = _dict_result(
+            await s.call_tool(
+                "mad_query_events",
+                {"session_id": session_id, "kind": "session.created"},
+            )
+        )
+    assert len(body["events"]) == 1
+    assert body["events"][0]["type"] == "session.created"
+    assert body["events"][0]["session_id"] == session_id
+
+
+async def test_query_events_unknown_kind_returns_empty_list(client: TestClient) -> None:
+    """Negative twin: a kind that never happened is an empty result, NOT an
+    error — the bounded query returns ``events == []``."""
+    async with _mcp_session(client) as s:
+        session_id = await _make_session(s)
+        body = _dict_result(
+            await s.call_tool(
+                "mad_query_events",
+                {"session_id": session_id, "kind": "nonexistent.kind"},
+            )
+        )
+    assert body["events"] == []
+
+
+# --- cross-check: tools share live state with each other and the dispatcher --
+
+
+async def test_session_inherits_manual_deployment_default_so_trigger_drains(
+    client: TestClient,
+) -> None:
+    """High-value integration: a session created with NO per-session policy
+    inherits the deployment default. Setting the deployment default to manual
+    (one tool), creating a session (another tool), then triggering (a third)
+    drains the queue — proving the MCP tools share the same live deployment
+    policy and projection. Mirrors the immediate-mode twin in
+    ``test_trigger_dispatch_immediate_mode_errors``.
+    """
+    async with _mcp_session(client) as s:
+        await s.call_tool(
+            "mad_set_deployment_dispatch_policy",
+            {"payload": {"kind": "manual"}},
+        )
+        session_id = await _make_session(s)
+        _inject_queued(client, session_id, content="inherited drain")
+        body = _dict_result(await s.call_tool("mad_trigger_dispatch", {"session_id": session_id}))
+    assert body == {"session_id": session_id, "drained": 1}
