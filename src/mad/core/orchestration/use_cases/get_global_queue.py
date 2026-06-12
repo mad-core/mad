@@ -14,6 +14,12 @@ groups into one priority-sorted list: a high-priority session whose
   dispatchable, each with a reason (``window`` + the next window
   opening, or ``manual``), ordered by ``(scheduled_for, -priority)``.
 
+Eligibility and the ``scheduled`` reasons are computed against the
+*effective* policy — ``resolve_effective_policy(session, deployment)``
+(issue #45) — exactly as the post-merge dispatcher evaluates it, so a
+session inheriting a gated deployment default is bucketed and explained
+the same way the dispatcher would treat it (ADR-0009 §11).
+
 This read surface lives in ``core/orchestration/`` per ADR-0004 / hard
 rule 8 — the events module stays observability-only.
 """
@@ -24,6 +30,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal
 
+from mad.core.orchestration.domain.deployment_policy import (
+    DeploymentDispatchPolicy,
+    resolve_effective_policy,
+)
 from mad.core.orchestration.domain.dispatch_policy import (
     WorkWindowPolicy,
     can_dispatch,
@@ -71,10 +81,14 @@ class GetGlobalQueueUseCase:
         sessions_index: dict[str, Session],
         task_queue: TaskQueue,
         clock: Clock,
+        deployment: DeploymentDispatchPolicy | None = None,
     ) -> None:
         self._sessions = sessions_index
         self._task_queue = task_queue
         self._clock = clock
+        # Same holder the dispatcher resolves against (issue #45) — the
+        # queue view must never disagree with the dispatcher (Part D).
+        self._deployment = deployment
 
     def execute(self) -> GlobalQueueOutput:
         pending = self._task_queue.pending_session_ids()
@@ -96,7 +110,11 @@ class GetGlobalQueueUseCase:
         eligible = [
             s
             for s in sessions.values()
-            if can_dispatch(s.dispatch_policy, now, manual_drain_remaining=s.manual_drain_remaining)
+            if can_dispatch(
+                resolve_effective_policy(s, self._deployment),
+                now,
+                manual_drain_remaining=s.manual_drain_remaining,
+            )
         ]
         eligible_ids = {s.session_id for s in eligible}
         gated = [s for s in sessions.values() if s.session_id not in eligible_ids]
@@ -133,8 +151,9 @@ class GetGlobalQueueUseCase:
     def _scheduled(self, gated: list[Session], now: datetime) -> list[ScheduledEntry]:
         entries: list[ScheduledEntry] = []
         for session in gated:
-            is_window = isinstance(session.dispatch_policy, WorkWindowPolicy)
-            scheduled_for = next_window_opening(session.dispatch_policy, now) if is_window else None
+            policy = resolve_effective_policy(session, self._deployment)
+            is_window = isinstance(policy, WorkWindowPolicy)
+            scheduled_for = next_window_opening(policy, now) if is_window else None
             for task in self._task_queue.queued(session.session_id):
                 entries.append(
                     ScheduledEntry(

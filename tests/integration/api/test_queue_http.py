@@ -219,6 +219,60 @@ def test_manual_session_with_pending_trigger_is_ready(
     assert body["scheduled"] == []
 
 
+# -- Effective policy: deployment-default inheritance (issue #45) --------------------
+
+
+def test_inheriting_session_is_gated_by_deployment_default_window(
+    client: TestClient, session_payload: dict
+) -> None:
+    """A session with NO per-session override inherits the deployment-wide
+    work_window default (issue #45), so the queue view gates it exactly as
+    the dispatcher would: scheduled with the window's next opening, never
+    ready."""
+    assert client.put("/v1/dispatch_policy", json=_CLOSED_WINDOW).status_code == 200
+    session_id = _create_session(client, session_payload)
+    task = _inject_queued(client, session_id, minute=0)
+
+    body = client.get("/v1/queue").json()
+
+    assert body["ready"] == []
+    assert len(body["scheduled"]) == 1
+    gated = body["scheduled"][0]
+    assert gated["task_id"] == str(task.task_id)
+    assert gated["reason"]["kind"] == "window"
+    assert datetime.fromisoformat(gated["reason"]["scheduled_for"]) == datetime(
+        2026, 6, 1, 18, 0, tzinfo=UTC
+    )
+
+
+def test_pinned_immediate_override_beats_gated_deployment_default(
+    client: TestClient, session_payload: dict
+) -> None:
+    """Negative twin: a pinned per-session ``immediate`` override wins over
+    the gated deployment default (issue #45 resolution order), so its task
+    is ready while the inheriting sibling stays scheduled — and ready[0]
+    agrees with the dispatcher's actual pick under that same resolution."""
+    assert client.put("/v1/dispatch_policy", json=_CLOSED_WINDOW).status_code == 200
+    pinned_id = _create_session(client, session_payload)
+    inheriting_id = _create_session(client, session_payload)
+    assert (
+        client.patch(
+            f"/v1/sessions/{pinned_id}/dispatch_policy", json={"kind": "immediate"}
+        ).status_code
+        == 200
+    )
+    pinned_task = _inject_queued(client, pinned_id, minute=0)
+    inheriting_task = _inject_queued(client, inheriting_id, minute=10)
+
+    body = client.get("/v1/queue").json()
+    picked = client.app.state.dispatcher._find_next_dispatchable()
+
+    assert [e["task_id"] for e in body["ready"]] == [str(pinned_task.task_id)]
+    assert [e["task_id"] for e in body["scheduled"]] == [str(inheriting_task.task_id)]
+    assert picked is not None
+    assert str(picked.task_id) == body["ready"][0]["task_id"]
+
+
 # -- in_flight ----------------------------------------------------------------------
 
 

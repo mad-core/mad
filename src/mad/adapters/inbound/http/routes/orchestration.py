@@ -558,13 +558,16 @@ def _scheduled_task_entry(entry: ScheduledEntry) -> ScheduledTaskEntry:
 async def get_global_queue(request: Request) -> GlobalQueueResponse:
     """Global queue view across all sessions, policy-aware.
 
-    ``ready`` is computed with the same ordering function the dispatcher
+    ``ready`` is computed with the same ordering function AND the same
+    effective-policy resolution (per-session override, else the
+    deployment default, else immediate — issue #45) the dispatcher
     uses, so ``ready[0]`` is exactly the next dispatch.
     """
     use_case = GetGlobalQueueUseCase(
         sessions_index=_store(request).sessions,
         task_queue=_projection(request),
         clock=request.app.state.clock,
+        deployment=_deployment_policy(request),
     )
     output = use_case.execute()
     return GlobalQueueResponse(
