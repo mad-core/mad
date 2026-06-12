@@ -16,6 +16,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from mad.core.orchestration.domain.deployment_policy import (
+    DeploymentDispatchPolicy,
+    resolve_effective_policy,
+)
 from mad.core.orchestration.domain.dispatch_policy import ManualPolicy
 from mad.core.orchestration.ports.task_queue import TaskQueue
 from mad.core.sessions.domain.entities.session import Session
@@ -55,17 +59,23 @@ class TriggerManualDispatchUseCase:
         self,
         sessions_index: dict[str, Session],
         task_queue: TaskQueue,
+        deployment: DeploymentDispatchPolicy | None = None,
     ) -> None:
         self._sessions = sessions_index
         self._queue = task_queue
+        self._deployment = deployment
 
     def execute(self, payload: TriggerManualDispatchInput) -> TriggerManualDispatchOutput:
         if payload.session_id not in self._sessions:
             raise SessionNotFound(payload.session_id)
         session = self._sessions[payload.session_id]
 
-        if not isinstance(session.dispatch_policy, ManualPolicy):
-            raise TriggerNotApplicable(payload.session_id, session.dispatch_policy.kind)
+        # Resolve the *effective* policy so a session inheriting a ``manual``
+        # deployment default can still be drained (issue #45). A pinned
+        # override wins over the deployment default, unchanged from #33.
+        effective = resolve_effective_policy(session, self._deployment)
+        if not isinstance(effective, ManualPolicy):
+            raise TriggerNotApplicable(payload.session_id, effective.kind)
 
         # Snapshot the queued count at trigger time. New tasks queued after
         # the trigger but before drain finishes do NOT join this drain.

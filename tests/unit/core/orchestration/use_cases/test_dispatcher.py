@@ -30,7 +30,9 @@ import pytest
 
 from mad.adapters.outbound.orchestration.projection import InMemoryTaskProjection
 from mad.core.events.emitter import EventEmitter
+from mad.core.orchestration.domain.deployment_policy import DeploymentDispatchPolicy
 from mad.core.orchestration.domain.dispatch_policy import (
+    ImmediatePolicy,
     ManualPolicy,
     Window,
     WorkWindowPolicy,
@@ -100,6 +102,7 @@ class _Harness:
         *,
         clock: FakeClock | None = None,
         tick_interval_s: float = 0.05,
+        deployment: DeploymentDispatchPolicy | None = None,
     ) -> None:
         self.store = FakeEventStore()
         self.bus = FakeEventBus()
@@ -107,6 +110,7 @@ class _Harness:
         self.emitter = EventEmitter(store=self.store, bus=self.bus)
         self.sessions = sessions
         self.clock = clock
+        self.deployment = deployment
         self.launcher_factory: Callable[[str], Any] = lambda _name: launcher
         self.dispatcher = Dispatcher(
             projection=self.projection,
@@ -116,6 +120,7 @@ class _Harness:
             get_launcher=self.launcher_factory,
             clock=clock,
             tick_interval_s=tick_interval_s,
+            deployment_policy=deployment,
         )
         self.enqueue = EnqueueTaskUseCase(sessions_index=sessions, emitter=self.emitter)
 
@@ -489,5 +494,113 @@ async def test_queued_for_window_emitted_only_once_across_repeated_ticks(
             banners = [c for c in h.store.calls if c[1] == "task.queued_for_window"]
             assert len(banners) == 1, banners
             await asyncio.sleep(0.01)
+    finally:
+        await h.stop()
+
+
+# -- Deployment-default inheritance (issue #45) -------------------------------
+
+
+async def test_inherited_work_window_default_inside_window_dispatches(
+    tmp_path: Path,
+) -> None:
+    """A session with NO per-session override inherits the deployment
+    default. Default = WorkWindowPolicy and the clock is inside the
+    window → the dispatcher dispatches as if the session pinned it."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    session = _session("sesn_a", workspace)
+    assert session.dispatch_policy is None  # no override — inherits
+    sessions = {"sesn_a": session}
+    deployment = DeploymentDispatchPolicy(
+        default=WorkWindowPolicy(
+            windows=(Window(start=dtime(18, 0), end=dtime(8, 0), timezone=_MEX),)
+        )
+    )
+    launcher = ScriptedLauncher()
+    _scripted_two_runs(launcher)
+    clock = FakeClock(_at(2026, 5, 9, 22, 0))  # inside 18:00→08:00
+    h = _Harness(sessions, launcher, clock=clock, deployment=deployment)
+    await h.start()
+    try:
+        await h.enqueue.execute(EnqueueTaskInput(session_id="sesn_a", content="hi"))
+        await _wait_for_event_type(h.store, session_id="sesn_a", event_type="task.completed")
+        types = _types_for_session(h.store, "sesn_a")
+        assert "task.queued_for_window" not in types
+    finally:
+        await h.stop()
+
+
+async def test_deployment_default_is_read_live_not_snapshotted(tmp_path: Path) -> None:
+    """The holder is read on every evaluation, not captured at construction.
+    Default starts ``manual`` (no dispatch), then is mutated to
+    ``immediate`` mid-run; the next tick dispatches the queued task —
+    proving the dispatcher reads ``deployment.default`` live (issue #45)."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    session = _session("sesn_a", workspace)
+    sessions = {"sesn_a": session}
+    deployment = DeploymentDispatchPolicy(default=ManualPolicy())
+    launcher = ScriptedLauncher()
+    _scripted_two_runs(launcher)
+    clock = FakeClock(_at(2026, 5, 9, 22, 0))
+    h = _Harness(sessions, launcher, clock=clock, tick_interval_s=0.05, deployment=deployment)
+    await h.start()
+    try:
+        await h.enqueue.execute(EnqueueTaskInput(session_id="sesn_a", content="later"))
+        # Under the manual default nothing dispatches.
+        await _wait_for_event_absent(h.store, session_id="sesn_a", event_type="task.dispatched")
+        assert launcher.calls == []
+        # Flip the deployment default live; the next tick must notice.
+        deployment.default = ImmediatePolicy()
+        await _wait_for_event_type(h.store, session_id="sesn_a", event_type="task.completed")
+        assert launcher.calls != []
+    finally:
+        await h.stop()
+
+
+async def test_session_override_immediate_wins_over_manual_default(tmp_path: Path) -> None:
+    """Override beats default: session pins ``immediate`` while the
+    deployment default is ``manual`` → the session still dispatches."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    session = _session("sesn_a", workspace)
+    session.dispatch_policy = ImmediatePolicy()
+    sessions = {"sesn_a": session}
+    deployment = DeploymentDispatchPolicy(default=ManualPolicy())
+    launcher = ScriptedLauncher()
+    _scripted_two_runs(launcher)
+    clock = FakeClock(_at(2026, 5, 9, 22, 0))
+    h = _Harness(sessions, launcher, clock=clock, deployment=deployment)
+    await h.start()
+    try:
+        await h.enqueue.execute(EnqueueTaskInput(session_id="sesn_a", content="go"))
+        await _wait_for_event_type(h.store, session_id="sesn_a", event_type="task.completed")
+        assert launcher.calls != []
+    finally:
+        await h.stop()
+
+
+async def test_no_override_and_no_deployment_default_behaves_as_immediate(
+    tmp_path: Path,
+) -> None:
+    """Both None → unchanged legacy behaviour: dispatch immediately. This
+    is the negative twin of the manual-default cases above — proving the
+    fallback to ImmediatePolicy when nothing is configured anywhere."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    session = _session("sesn_a", workspace)
+    assert session.dispatch_policy is None
+    sessions = {"sesn_a": session}
+    deployment = DeploymentDispatchPolicy(default=None)
+    launcher = ScriptedLauncher()
+    _scripted_two_runs(launcher)
+    clock = FakeClock(_at(2026, 5, 9, 22, 0))
+    h = _Harness(sessions, launcher, clock=clock, deployment=deployment)
+    await h.start()
+    try:
+        await h.enqueue.execute(EnqueueTaskInput(session_id="sesn_a", content="now"))
+        await _wait_for_event_type(h.store, session_id="sesn_a", event_type="task.completed")
+        assert launcher.calls != []
     finally:
         await h.stop()

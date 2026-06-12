@@ -45,7 +45,12 @@ from uuid import UUID
 from mad.core.events.domain.event import Event
 from mad.core.events.emitter import EventEmitter
 from mad.core.events.ports.event_bus import EventBus, EventFilter
+from mad.core.orchestration.domain.deployment_policy import (
+    DeploymentDispatchPolicy,
+    resolve_effective_policy,
+)
 from mad.core.orchestration.domain.dispatch_policy import (
+    ImmediatePolicy,
     can_dispatch,
     next_window_opening,
 )
@@ -70,6 +75,7 @@ class Dispatcher:
         get_launcher: Callable[[str], Any],
         clock: Clock | None = None,
         tick_interval_s: float = _DEFAULT_TICK_INTERVAL_S,
+        deployment_policy: DeploymentDispatchPolicy | None = None,
     ) -> None:
         self._projection = projection
         self._emitter = emitter
@@ -78,6 +84,10 @@ class Dispatcher:
         self._get_launcher = get_launcher
         self._clock = clock
         self._tick_interval_s = tick_interval_s
+        # Process-global default that sessions without an override inherit
+        # (issue #45). Held by reference so a live ``PUT /v1/dispatch_policy``
+        # is observed on the next evaluation without restarting the loop.
+        self._deployment_policy = deployment_policy or DeploymentDispatchPolicy()
 
         self._loop_task: asyncio.Task[None] | None = None
         self._launch_task: asyncio.Task[None] | None = None
@@ -223,14 +233,17 @@ class Dispatcher:
 
     def _can_dispatch_for_session(self, session_id: str) -> bool:
         session = self._sessions[session_id]
+        # Resolve the effective policy live (issue #45): per-session override,
+        # else the deployment default, else ImmediatePolicy.
+        policy = resolve_effective_policy(session, self._deployment_policy)
         instant = self._clock.now() if self._clock is not None else None
         # When no clock is wired, fall back to immediate-only behavior so
         # legacy test setups (PR #29's _Harness without a clock) keep
         # working. Production always wires SystemClock.
         if instant is None:
-            return type(session.dispatch_policy).__name__ == "ImmediatePolicy"
+            return isinstance(policy, ImmediatePolicy)
         return can_dispatch(
-            session.dispatch_policy,
+            policy,
             instant,
             manual_drain_remaining=session.manual_drain_remaining,
         )
@@ -239,7 +252,8 @@ class Dispatcher:
         session = self._sessions[session_id]
         if self._clock is None:
             return None
-        opening = next_window_opening(session.dispatch_policy, self._clock.now())
+        policy = resolve_effective_policy(session, self._deployment_policy)
+        opening = next_window_opening(policy, self._clock.now())
         return opening.isoformat() if opening is not None else None
 
     async def _run_task(self, task: Task) -> None:

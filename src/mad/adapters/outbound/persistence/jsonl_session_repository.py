@@ -92,7 +92,14 @@ class JsonlSessionRepository:
         return log_path(session_id).exists()
 
     def list_session_ids(self) -> list[str]:
-        """Return every session ID with a persisted JSONL log on disk."""
+        """Return every session ID with a persisted JSONL log on disk.
+
+        Reserved internal streams (ids starting with ``__``, e.g. the
+        deployment-wide dispatch-policy log from issue #45) are NOT real
+        sessions and are excluded so they never get rehydrated or listed.
+        """
         if not SESSIONS_DIR.exists():
             return []
-        return sorted(p.stem for p in SESSIONS_DIR.glob("*.jsonl"))
+        return sorted(
+            p.stem for p in SESSIONS_DIR.glob("*.jsonl") if not p.stem.startswith("__")
+        )

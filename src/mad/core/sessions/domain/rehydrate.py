@@ -12,7 +12,6 @@ from typing import Any
 
 from mad.core.orchestration.domain.dispatch_policy import (
     DispatchPolicy,
-    ImmediatePolicy,
     InvalidDispatchPolicy,
     policy_from_dict,
 )
@@ -33,7 +32,10 @@ def rehydrate_from_events(session_id: str, events: list[dict[str, Any]]) -> Sess
     status = "created"
     created_at: datetime | None = None
     latest_at: datetime | None = None
-    dispatch_policy: DispatchPolicy = ImmediatePolicy()
+    # ``None`` means "no per-session override" — the session inherits the
+    # deployment default at dispatch time (issue #45). Replaying a
+    # ``dispatch_policy.cleared`` event resets it back to ``None``.
+    dispatch_policy: DispatchPolicy | None = None
 
     for event in events:
         etype = event.get("type", "")
@@ -56,6 +58,10 @@ def rehydrate_from_events(session_id: str, events: list[dict[str, Any]]) -> Sess
                 dispatch_policy = policy_from_dict(_event_payload(event))
             except InvalidDispatchPolicy:
                 continue
+        elif etype == "dispatch_policy.cleared":
+            # Issue #45 — DELETE cleared the per-session override; the
+            # session goes back to inheriting the deployment default.
+            dispatch_policy = None
 
         ts = _parse_timestamp(event.get("timestamp"))
         if ts is None:
