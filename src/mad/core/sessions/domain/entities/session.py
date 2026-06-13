@@ -39,6 +39,7 @@ class Session:
     working_directory: str = ""
     status: str = "created"
     base_branch: str | None = None
+    model: str | None = None
     resources_mounted: list[dict[str, Any]] = field(default_factory=list)
     response: dict[str, Any] = field(default_factory=dict)
     tokens_to_redact: list[str] = field(default_factory=list, repr=False)
@@ -95,6 +96,7 @@ class Session:
             "working_directory": self.working_directory,
             "status": self.status,
             "base_branch": self.base_branch,
+            "model": self.model,
             "resources_mounted": self.resources_mounted,
             "response": self.response,
             "created_at": self.created_at.isoformat(),
@@ -114,6 +116,7 @@ class Session:
             working_directory=d.get("working_directory", ""),
             status=d.get("status", "created"),
             base_branch=d.get("base_branch"),
+            model=d.get("model"),
             resources_mounted=d.get("resources_mounted", []),
             response=d.get("response", {}),
             created_at=created_at,

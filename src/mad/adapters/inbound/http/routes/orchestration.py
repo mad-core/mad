@@ -79,6 +79,14 @@ class EnqueueTaskRequest(BaseModel):
             " accepted but not interpreted in v1 — recorded on the event verbatim."
         ),
     )
+    model: str | None = Field(
+        default=None,
+        description=(
+            "Optional model id for this task. Overrides the session and deployment"
+            " model defaults when set. ``null`` (default) inherits from the session"
+            " or deployment default."
+        ),
+    )
 
 
 class EnqueueTaskResponse(BaseModel):
@@ -94,6 +102,7 @@ class TaskResponse(BaseModel):
     content: str
     scheduled_for: str
     created_at: datetime
+    model: str | None = None
 
 
 class ListTasksResponse(BaseModel):
@@ -216,12 +225,14 @@ async def enqueue_task(
     use_case = EnqueueTaskUseCase(
         sessions_index=_store(request).sessions,
         emitter=_emitter(request),
+        model_catalog=request.app.state.model_catalog,
     )
     output = await use_case.execute(
         EnqueueTaskInput(
             session_id=session_id,
             content=payload.content,
             scheduled_for=payload.scheduled_for,
+            model=payload.model,
         )
     )
     return EnqueueTaskResponse(
@@ -249,6 +260,7 @@ async def list_tasks(session_id: str, request: Request) -> ListTasksResponse:
                 content=t.content,
                 scheduled_for=t.scheduled_for,
                 created_at=t.created_at,
+                model=t.model,
             )
             for t in output.queued
         ],
@@ -259,6 +271,7 @@ async def list_tasks(session_id: str, request: Request) -> ListTasksResponse:
                 content=output.in_flight.content,
                 scheduled_for=output.in_flight.scheduled_for,
                 created_at=output.in_flight.created_at,
+                model=output.in_flight.model,
             )
             if output.in_flight is not None
             else None

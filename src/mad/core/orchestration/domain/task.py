@@ -35,3 +35,4 @@ class Task:
     content: str
     scheduled_for: str
     created_at: datetime
+    model: str | None = None

@@ -137,3 +137,35 @@ def test_rehydrate_empty_events_yields_epoch_timestamps() -> None:
     assert s.created_at == datetime.fromtimestamp(0, tz=UTC)
     assert s.updated_at == s.created_at
     assert s.status == "created"
+
+
+def test_rehydrate_session_created_with_provider_preserves_it() -> None:
+    """A ``session.created`` event that carries a ``provider`` key must
+    restore that provider on the rehydrated Session."""
+    events = [
+        {
+            "type": "session.created",
+            "timestamp": "2026-05-06T09:00:00+00:00",
+            "agent": "myagent",
+            "provider": "opencode",
+        }
+    ]
+    s = rehydrate_from_events("sesn_x", events)
+
+    assert s.agent["provider"] == "opencode"
+
+
+def test_rehydrate_session_created_without_provider_degrades_to_unknown() -> None:
+    """Negative twin: a legacy ``session.created`` event that has NO
+    ``provider`` key must degrade gracefully to ``"unknown"`` rather than
+    crashing or producing an empty string."""
+    events = [
+        {
+            "type": "session.created",
+            "timestamp": "2026-05-06T09:00:00+00:00",
+            "agent": "myagent",
+        }
+    ]
+    s = rehydrate_from_events("sesn_x", events)
+
+    assert s.agent["provider"] == "unknown"

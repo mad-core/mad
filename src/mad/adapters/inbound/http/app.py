@@ -10,6 +10,7 @@ from starlette.requests import Request
 from mad.adapters.inbound.http.dependencies import build_dependencies, touch_session
 from mad.adapters.inbound.http.routes.events import router as events_router
 from mad.adapters.inbound.http.routes.orchestration import router as orchestration_router
+from mad.adapters.inbound.http.routes.providers import router as providers_router
 from mad.adapters.inbound.http.routes.sessions import router as sessions_router
 from mad.adapters.outbound.agents import factory
 from mad.adapters.outbound.orchestration.projection import InMemoryTaskProjection
@@ -24,11 +25,17 @@ from mad.core.orchestration.domain.exceptions.base import (
     TaskAlreadyDispatched,
     TaskNotFound,
 )
+from mad.core.orchestration.domain.model_config import DeploymentModelConfig
 from mad.core.orchestration.ports.clock import Clock
+from mad.core.orchestration.ports.model_catalog import ModelCatalog
 from mad.core.orchestration.use_cases.deployment_dispatch_policy import (
     bootstrap_deployment_policy,
 )
+from mad.core.orchestration.use_cases.deployment_model_config import (
+    bootstrap_deployment_model_config,
+)
 from mad.core.orchestration.use_cases.dispatcher import Dispatcher
+from mad.core.orchestration.use_cases.list_provider_models import InvalidModelError
 from mad.core.orchestration.use_cases.trigger_manual_dispatch import TriggerNotApplicable
 from mad.core.sessions import SessionStore
 from mad.core.sessions.domain.exceptions.base import PathTraversalError, SessionNotFound
@@ -50,6 +57,8 @@ def create_app(
     clock: Clock | None = None,
     dispatcher_tick_interval_s: float | None = None,
     deployment_policy: DeploymentDispatchPolicy | None = None,
+    model_catalog: ModelCatalog | None = None,
+    deployment_model_config: DeploymentModelConfig | None = None,
 ) -> FastAPI:
     """Build a FastAPI app with injected dependencies."""
 
@@ -63,6 +72,8 @@ def create_app(
         _default_projection,
         _default_clock,
         _default_deployment_policy,
+        _default_model_catalog,
+        _default_deployment_model_config,
     ) = build_dependencies()
 
     final_store = store if store is not None else _default_store
@@ -94,6 +105,15 @@ def create_app(
     else:
         final_event_emitter = _default_event_emitter
 
+    final_model_catalog: ModelCatalog = (
+        model_catalog if model_catalog is not None else _default_model_catalog
+    )
+    final_deployment_model_config: DeploymentModelConfig = (
+        deployment_model_config
+        if deployment_model_config is not None
+        else _default_deployment_model_config
+    )
+
     if dispatcher is not None:
         final_dispatcher = dispatcher
     else:
@@ -105,6 +125,7 @@ def create_app(
             "get_launcher": final_launcher_factory,
             "clock": final_clock,
             "deployment_policy": final_deployment_policy,
+            "deployment_model_config": final_deployment_model_config,
         }
         if dispatcher_tick_interval_s is not None:
             dispatcher_kwargs["tick_interval_s"] = dispatcher_tick_interval_s
@@ -127,6 +148,8 @@ def create_app(
         task_projection=final_projection,
         deployment_policy=final_deployment_policy,
         event_log_query=final_event_log_query,
+        model_catalog=final_model_catalog,
+        deployment_model_config=final_deployment_model_config,
     )
     mcp_asgi_app = mcp_server.streamable_http_app()
 
@@ -140,6 +163,9 @@ def create_app(
         # so an operator-set default survives a restart (issue #45,
         # hard rule 6) before the dispatcher evaluates any session.
         bootstrap_deployment_policy(final_deployment_policy, final_repo)
+        # Rebuild the deployment-wide model default from its reserved log
+        # (issue #55, hard rule 6).
+        bootstrap_deployment_model_config(final_deployment_model_config, final_repo)
         await final_dispatcher.start()
         async with mcp_server.session_manager.run():
             try:
@@ -159,6 +185,8 @@ def create_app(
     app.state.dispatcher = final_dispatcher
     app.state.clock = final_clock
     app.state.deployment_policy = final_deployment_policy
+    app.state.model_catalog = final_model_catalog
+    app.state.deployment_model_config = final_deployment_model_config
     app.state.mcp_server = mcp_server
 
     @app.exception_handler(PathTraversalError)
@@ -199,6 +227,12 @@ def create_app(
         # ValueError handler would otherwise emit).
         return JSONResponse(status_code=422, content={"detail": str(exc)})
 
+    @app.exception_handler(InvalidModelError)
+    async def _invalid_model_handler(request: Request, exc: InvalidModelError) -> JSONResponse:
+        # InvalidModelError inherits ValueError; 422 identifies the unknown
+        # model as a validation error on the caller's payload.
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+
     @app.exception_handler(TriggerNotApplicable)
     async def _trigger_not_applicable_handler(
         request: Request, exc: TriggerNotApplicable
@@ -208,5 +242,6 @@ def create_app(
     app.include_router(sessions_router)
     app.include_router(events_router)
     app.include_router(orchestration_router)
+    app.include_router(providers_router)
     app.mount("/mcp", mcp_asgi_app)
     return app
