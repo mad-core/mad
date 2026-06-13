@@ -69,6 +69,8 @@ def main() -> None:
             projection,
             clock,
             deployment_policy,
+            model_catalog,
+            deployment_model_config,
         ) = build_dependencies()
 
         public_app = create_app(
@@ -81,6 +83,8 @@ def main() -> None:
             task_projection=projection,
             clock=clock,
             deployment_policy=deployment_policy,
+            model_catalog=model_catalog,
+            deployment_model_config=deployment_model_config,
         )
         internal_app = create_internal_app(emitter)
 

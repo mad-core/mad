@@ -37,6 +37,7 @@ class CreateSessionInput:
     idempotency_key: str | None = None
     base_branch: str | None = None
     working_directory: str | None = None
+    model: str | None = None
 
 
 @dataclass
@@ -90,7 +91,9 @@ class CreateSessionUseCase:
             "session.created",
             {
                 "agent": payload.agent["name"],
+                "provider": payload.agent.get("provider", ""),
                 "working_directory": str(working_directory),
+                "model": payload.model,
             },
         )
 
@@ -147,6 +150,7 @@ class CreateSessionUseCase:
             working_directory=str(working_directory),
             status="created",
             base_branch=payload.base_branch,
+            model=payload.model,
             resources_mounted=resources_mounted,
             response=response,
             tokens_to_redact=tokens_to_redact,

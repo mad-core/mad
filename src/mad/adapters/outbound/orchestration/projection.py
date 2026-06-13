@@ -88,6 +88,7 @@ class InMemoryTaskProjection:
             content=event.data["content"],
             scheduled_for=event.data["scheduled_for"],
             created_at=event.timestamp,
+            model=event.data.get("model"),
         )
         self._queued[event.session_id].append(task)
 
