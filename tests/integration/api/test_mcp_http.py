@@ -275,6 +275,10 @@ async def test_tool_surface_is_the_full_request_response_route_set(client: TestC
             "mad_set_session_priority",
             "mad_get_queue",
             "mad_query_events",
+            "mad_list_provider_models",
+            "mad_get_deployment_model",
+            "mad_set_deployment_model",
+            "mad_clear_deployment_model",
         ]
     )
 
@@ -803,3 +807,72 @@ async def test_session_inherits_manual_deployment_default_so_trigger_drains(
         _inject_queued(client, session_id, content="inherited drain")
         body = _dict_result(await s.call_tool("mad_trigger_dispatch", {"session_id": session_id}))
     assert body == {"session_id": session_id, "drained": 1}
+
+
+# =============================================================================
+# Behavioural tests for the 4 provider / deployment-model tools (FIX 5).
+# Each happy path has a negative twin (rule 1); assertions are pinned with
+# ``==`` to a single contract check (rule 2).
+# =============================================================================
+
+
+# --- tool: mad_list_provider_models ------------------------------------------
+
+
+async def test_list_provider_models_contains_claude_cli_static_list(
+    client: TestClient,
+) -> None:
+    """``mad_list_provider_models`` must return ``claude_cli`` with at least
+    the three static fallback models ``opus``, ``sonnet``, ``haiku``."""
+    async with _mcp_session(client) as s:
+        body = _dict_result(await s.call_tool("mad_list_provider_models", {}))
+    assert "claude_cli" in body["providers"]
+    assert body["providers"]["claude_cli"] == ["opus", "sonnet", "haiku"]
+
+
+async def test_list_provider_models_returns_all_registered_providers(
+    client: TestClient,
+) -> None:
+    """Negative twin: the catalog must contain every registered provider key,
+    not just ``claude_cli`` — a missing provider is a contract violation."""
+    async with _mcp_session(client) as s:
+        body = _dict_result(await s.call_tool("mad_list_provider_models", {}))
+    assert set(body["providers"].keys()) >= {"claude_cli", "opencode"}
+
+
+# --- tools: mad_set / mad_get / mad_clear_deployment_model -------------------
+
+
+async def test_set_deployment_model_returns_the_new_value(client: TestClient) -> None:
+    """``mad_set_deployment_model`` must echo back the model that was set."""
+    async with _mcp_session(client) as s:
+        body = _dict_result(
+            await s.call_tool("mad_set_deployment_model", {"payload": {"model": "opus"}})
+        )
+    assert body == {"model": "opus"}
+
+
+async def test_get_deployment_model_reflects_set_value(client: TestClient) -> None:
+    """After a ``mad_set_deployment_model`` call, ``mad_get_deployment_model``
+    must reflect the new value — the two tools share the same live config."""
+    async with _mcp_session(client) as s:
+        await s.call_tool("mad_set_deployment_model", {"payload": {"model": "opus"}})
+        body = _dict_result(await s.call_tool("mad_get_deployment_model", {}))
+    assert body == {"model": "opus"}
+
+
+async def test_clear_deployment_model_returns_null(client: TestClient) -> None:
+    """``mad_clear_deployment_model`` must return ``{"model": null}`` after
+    clearing a previously set deployment model."""
+    async with _mcp_session(client) as s:
+        await s.call_tool("mad_set_deployment_model", {"payload": {"model": "opus"}})
+        body = _dict_result(await s.call_tool("mad_clear_deployment_model", {}))
+    assert body == {"model": None}
+
+
+async def test_get_deployment_model_unset_returns_null(client: TestClient) -> None:
+    """Negative twin: with no deployment model set, ``mad_get_deployment_model``
+    returns ``{"model": null}`` — not an error, not an empty string."""
+    async with _mcp_session(client) as s:
+        body = _dict_result(await s.call_tool("mad_get_deployment_model", {}))
+    assert body == {"model": None}
