@@ -61,6 +61,7 @@ async def test_enqueues_task_emits_task_queued_with_full_payload() -> None:
         "task_id": str(output.task_id),
         "content": "fix issue #42",
         "scheduled_for": "now",
+        "model": None,
     }
 
     # And it was published on the bus exactly once.
@@ -81,6 +82,7 @@ async def test_passes_through_explicit_scheduled_for() -> None:
         "task_id": str(output.task_id),
         "content": "overnight job",
         "scheduled_for": "next_window",
+        "model": None,
     }
 
 

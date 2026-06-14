@@ -17,6 +17,7 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, Header, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
+from mad.core.orchestration.use_cases.list_provider_models import ListProviderModelsUseCase
 from mad.core.sessions import SessionStore
 from mad.core.sessions.use_cases.cleanup_sessions import (
     CleanupSessionsInput,
@@ -75,6 +76,13 @@ class CreateSessionRequest(BaseModel):
             "When unset and exactly one github_repository resource is present, the "
             "directory auto-derives from that mount; otherwise it falls back to the "
             "workspace root."
+        ),
+    )
+    model: str | None = Field(
+        default=None,
+        description=(
+            "Optional model id; overrides the deployment default for this session. "
+            "``null`` (default) inherits from the deployment model default."
         ),
     )
 
@@ -162,6 +170,12 @@ async def create_session(
 ) -> dict:
     store = _store(request)
 
+    # 422 validation: if a model is specified, verify it exists in the catalog.
+    if payload.model is not None:
+        await ListProviderModelsUseCase(catalog=request.app.state.model_catalog).validate_model(
+            payload.agent.provider, payload.model
+        )
+
     resource_specs = [
         ResourceSpec(
             type=r.type,
@@ -192,6 +206,7 @@ async def create_session(
             idempotency_key=idempotency_key,
             base_branch=payload.base_branch,
             working_directory=payload.working_directory,
+            model=payload.model,
         )
     )
 
@@ -207,6 +222,7 @@ async def send_message(session_id: str, payload: SendMessageRequest, request: Re
         get_launcher=request.app.state.launcher_factory,
         emitter=request.app.state.event_emitter,
         task_queue=request.app.state.task_projection,
+        deployment_model_config=getattr(request.app.state, "deployment_model_config", None),
     )
     use_case.execute(SendUserMessageInput(session_id=session_id, content=payload.content))
 

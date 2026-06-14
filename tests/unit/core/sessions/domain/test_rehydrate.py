@@ -206,3 +206,35 @@ def test_rehydrate_skips_malformed_priority_payloads() -> None:
     s = rehydrate_from_events("sesn_x", events)
 
     assert s.priority == 4
+
+
+def test_rehydrate_session_created_with_provider_preserves_it() -> None:
+    """A ``session.created`` event that carries a ``provider`` key must
+    restore that provider on the rehydrated Session."""
+    events = [
+        {
+            "type": "session.created",
+            "timestamp": "2026-05-06T09:00:00+00:00",
+            "agent": "myagent",
+            "provider": "opencode",
+        }
+    ]
+    s = rehydrate_from_events("sesn_x", events)
+
+    assert s.agent["provider"] == "opencode"
+
+
+def test_rehydrate_session_created_without_provider_degrades_to_unknown() -> None:
+    """Negative twin: a legacy ``session.created`` event that has NO
+    ``provider`` key must degrade gracefully to ``"unknown"`` rather than
+    crashing or producing an empty string."""
+    events = [
+        {
+            "type": "session.created",
+            "timestamp": "2026-05-06T09:00:00+00:00",
+            "agent": "myagent",
+        }
+    ]
+    s = rehydrate_from_events("sesn_x", events)
+
+    assert s.agent["provider"] == "unknown"

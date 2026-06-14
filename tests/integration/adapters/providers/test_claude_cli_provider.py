@@ -227,3 +227,71 @@ async def test_claude_cli_ac5_custom_bin_path_is_invoked(
         f"Custom binary at {fake_bin} was not invoked — marker file not created. "
         "MAD_CLAUDE_CLI_BIN override must be respected."
     )
+
+
+# ---------------------------------------------------------------------------
+# AC-6: model is passed as --model <x> when set; absent when None (issue #55)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_claude_cli_ac6_model_flag_present_when_model_set(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When ``model`` is provided, ``--model <x>`` must appear in argv."""
+    marker = tmp_path / "argv.txt"
+    fake_bin = _make_executable_script(
+        tmp_path / "fake_claude",
+        f"""\
+        import sys
+        open("{marker}", "w").write(" ".join(sys.argv))
+        print("done")
+        sys.exit(0)
+        """,
+    )
+    monkeypatch.setenv("MAD_CLAUDE_CLI_BIN", str(fake_bin))
+
+    launcher = ClaudeCLIProvider()
+    collected: list[dict] = []
+
+    async def capture(event_type: str, event: dict) -> None:
+        collected.append(event)
+
+    await launcher.run(
+        session_id="s1", prompt="hello", workspace=tmp_path, emit=capture, model="claude-opus-4-5"
+    )
+
+    argv_text = marker.read_text()
+    assert "--model" in argv_text, f"Expected --model in argv, got: {argv_text}"
+    assert "claude-opus-4-5" in argv_text, f"Expected model id in argv, got: {argv_text}"
+
+
+@pytest.mark.asyncio
+async def test_claude_cli_ac6_model_flag_absent_when_model_is_none(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Negative twin: when ``model=None``, ``--model`` must NOT appear in argv."""
+    marker = tmp_path / "argv.txt"
+    fake_bin = _make_executable_script(
+        tmp_path / "fake_claude",
+        f"""\
+        import sys
+        open("{marker}", "w").write(" ".join(sys.argv))
+        print("done")
+        sys.exit(0)
+        """,
+    )
+    monkeypatch.setenv("MAD_CLAUDE_CLI_BIN", str(fake_bin))
+
+    launcher = ClaudeCLIProvider()
+    collected: list[dict] = []
+
+    async def capture(event_type: str, event: dict) -> None:
+        collected.append(event)
+
+    await launcher.run(
+        session_id="s1", prompt="hello", workspace=tmp_path, emit=capture, model=None
+    )
+
+    argv_text = marker.read_text()
+    assert "--model" not in argv_text, f"Expected --model absent from argv, got: {argv_text}"

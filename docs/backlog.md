@@ -50,3 +50,8 @@ SQLite adicionalmente habilita queries para listar, filtrar y paginar sesiones s
 - **Autenticación de la API**.
 - **Dashboard web**.
 - **Más LLM providers** (Ollama, OpenAI, etc).
+- **Unify provider registry** — `factory.get_launcher` and `model_catalog._DISCOVERY` currently list providers independently; unify them into a single source of truth so adding a provider in one place is sufficient.
+- **TTL cache for `ModelCatalogAdapter.discover()`** — every model-set session-create/enqueue shells out to `opencode models` (10 s timeout, uncached); add a short-lived in-process TTL cache to avoid repeated subprocesses per request.
+- **Wire `MAD_DEFAULT_MODEL` env var** — `resolve_effective_model`'s `machine_default` parameter is defined but never passed from the environment; wire it to a `MAD_DEFAULT_MODEL` env var read at startup.
+- **Evaluate `opencode run --output-format json` NDJSON streaming** — raw terminal stdout (ANSI/spinners) is streamed verbatim today; structured JSON output would let Mad parse and re-emit structured events instead of opaque text.
+- **Per-provider validation on `PUT /v1/model`** — the deployment default model is stored unvalidated and can fail at dispatch time if the value is not in any provider's catalog; add provider-aware validation at write time.

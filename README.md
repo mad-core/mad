@@ -17,6 +17,7 @@ Early days — `0.x`. Single launcher provider (`claude_cli`); HTTP + SSE surfac
 - Linux host (see `Operating System :: POSIX :: Linux` classifier)
 - Python ≥ 3.11
 - The `claude` CLI installed and on `PATH` (override the binary with `MAD_CLAUDE_CLI_BIN`; per-run timeout via `MAD_CLAUDE_CLI_TIMEOUT_S`)
+- Optionally: the `opencode` CLI for the `opencode` provider (override the binary with `MAD_OPENCODE_BIN`; per-run timeout via `MAD_OPENCODE_TIMEOUT_S`, default 600 s)
 - A GitHub token with `repo` scope for cloning private repos (passed per-request, never persisted — see hard rule 2)
 
 ## Install

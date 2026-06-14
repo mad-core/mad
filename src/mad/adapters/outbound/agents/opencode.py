@@ -11,14 +11,7 @@ from mad.adapters.outbound.agents._subprocess import _scrub, _subprocess_env
 from mad.adapters.outbound.agents.hook_socket import resolve_hook_socket_path
 
 
-class ClaudeCLIError(Exception):
-    def __init__(self, exit_code: int, stderr_tail: str) -> None:
-        self.exit_code = exit_code
-        self.stderr_tail = stderr_tail
-        super().__init__(f"claude CLI exited {exit_code}: {stderr_tail}")
-
-
-class ClaudeCLIProvider:
+class OpenCodeProvider:
     async def run(
         self,
         session_id: str,
@@ -27,24 +20,25 @@ class ClaudeCLIProvider:
         emit: Callable[[str, dict | None], Coroutine[Any, Any, None]],
         model: str | None = None,
     ) -> None:
-        executable = os.environ.get("MAD_CLAUDE_CLI_BIN") or shutil.which("claude")
+        executable = os.environ.get("MAD_OPENCODE_BIN") or shutil.which("opencode")
         if not executable:
             await emit(
                 "session.error",
-                {"type": "session.error", "error": "claude CLI binary not found"},
+                {"type": "session.error", "error": "opencode CLI binary not found"},
             )
             return
 
-        timeout = float(os.environ.get("MAD_CLAUDE_CLI_TIMEOUT_S", "600"))
+        timeout = float(os.environ.get("MAD_OPENCODE_TIMEOUT_S", "600"))
 
         env = _subprocess_env()
         env["MAD_SESSION_ID"] = session_id
         env["MAD_HOOK_SOCKET"] = resolve_hook_socket_path()
-        env["MAD_PROVIDER"] = "claude_cli"
+        env["MAD_PROVIDER"] = "opencode"
 
-        args = [executable, "--dangerously-skip-permissions", "-p", prompt]
+        args = [executable, "run"]
         if model is not None:
             args += ["--model", model]
+        args.append(prompt)
 
         proc = await asyncio.create_subprocess_exec(
             *args,

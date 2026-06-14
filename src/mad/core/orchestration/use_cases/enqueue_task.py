@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from uuid import UUID, uuid4
 
 from mad.core.events.emitter import EventEmitter
+from mad.core.orchestration.ports.model_catalog import ModelCatalog
 from mad.core.sessions.domain.entities.session import Session
 from mad.core.sessions.domain.exceptions.base import SessionNotFound
 
@@ -24,6 +25,7 @@ class EnqueueTaskInput:
     session_id: str
     content: str
     scheduled_for: str = "now"
+    model: str | None = None
 
 
 @dataclass(frozen=True)
@@ -40,13 +42,23 @@ class EnqueueTaskUseCase:
         self,
         sessions_index: dict[str, Session],
         emitter: EventEmitter,
+        model_catalog: ModelCatalog | None = None,
     ) -> None:
         self._sessions = sessions_index
         self._emitter = emitter
+        self._catalog = model_catalog
 
     async def execute(self, payload: EnqueueTaskInput) -> EnqueueTaskOutput:
         if payload.session_id not in self._sessions:
             raise SessionNotFound(payload.session_id)
+
+        if payload.model is not None and self._catalog is not None:
+            from mad.core.orchestration.use_cases.list_provider_models import (
+                ListProviderModelsUseCase,
+            )
+
+            provider = self._sessions[payload.session_id].agent.get("provider", "")
+            await ListProviderModelsUseCase(self._catalog).validate_model(provider, payload.model)
 
         task_id = uuid4()
         await self._emitter.emit(
@@ -56,6 +68,7 @@ class EnqueueTaskUseCase:
                 "task_id": str(task_id),
                 "content": payload.content,
                 "scheduled_for": payload.scheduled_for,
+                "model": payload.model,
             },
         )
         return EnqueueTaskOutput(
