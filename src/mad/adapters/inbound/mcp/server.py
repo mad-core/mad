@@ -299,6 +299,7 @@ def build_mcp_server(
             provisioner=workspace_provisioner,
             sessions_index=store.sessions,
             emitter=event_emitter,
+            task_queue=task_projection,
         )
         output = await use_case.execute(session_id)
         return {"status": output.status, "session_id": output.session_id}
@@ -319,6 +320,7 @@ def build_mcp_server(
             sessions_index=store.sessions,
             repo=session_repo,
             emitter=event_emitter,
+            task_queue=task_projection,
         )
         output = await use_case.execute(
             CleanupSessionsInput(older_than=cutoff, dry_run=payload.dry_run)

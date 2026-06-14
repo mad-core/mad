@@ -282,6 +282,7 @@ async def delete_session(session_id: str, request: Request) -> dict:
         provisioner=_provisioner(request),
         sessions_index=store.sessions,
         emitter=request.app.state.event_emitter,
+        task_queue=request.app.state.task_projection,
     )
     output = await use_case.execute(session_id)
     return {"status": output.status, "session_id": output.session_id}
@@ -302,6 +303,7 @@ async def cleanup_sessions(
         sessions_index=store.sessions,
         repo=_repo(request),
         emitter=request.app.state.event_emitter,
+        task_queue=request.app.state.task_projection,
     )
     output = await use_case.execute(
         CleanupSessionsInput(older_than=cutoff, dry_run=payload.dry_run)
