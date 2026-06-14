@@ -120,67 +120,43 @@ jobs:
             git push -u origin "$BRANCH"
           fi
 
+      # The agent owns the full git flow. Auth configured by actions/checkout is
+      # live for the whole job, so Claude commits, pushes, and opens the PR from
+      # inside the action via Bash + gh — no post-action steps, which is exactly
+      # what failed before (auth was torn down by the time a later step ran).
+      # GH_TOKEN is exported so `gh` works in Claude's Bash; the branch is
+      # already checked out, so committing here keeps the /work naming convention.
       - name: Run Claude Code on the issue
         uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: |
             Work GitHub issue #${{ github.event.issue.number }} in this repository,
-            following the project's /work pipeline and every hard rule in CLAUDE.md.
-            Branch ${{ needs.gate.outputs.branch }} is already checked out — make and
-            commit your changes there. Do not open the PR yourself; a later workflow
-            step handles the push and PR.
+            following the project's conventions and every hard rule in CLAUDE.md.
+
+            The branch ${{ needs.gate.outputs.branch }} is already checked out.
+            Make your changes, then finish the whole git flow yourself using Bash:
+
+            1. Commit all your changes to the current branch with a Conventional
+               Commit message (do NOT create a different branch).
+            2. Push the branch:
+                 git push origin HEAD:${{ needs.gate.outputs.branch }}
+            3. Open a NON-DRAFT pull request toward main, unless one already
+               exists for this branch:
+                 gh pr view ${{ needs.gate.outputs.branch }} >/dev/null 2>&1 \
+                   || gh pr create --base main \
+                        --head ${{ needs.gate.outputs.branch }} \
+                        --title "<conventional commit style title>" \
+                        --body "Automated development for #${{ github.event.issue.number }}.
+
+            Closes #${{ github.event.issue.number }}."
+
+            If you made no changes, do not commit, push, or open a PR.
+          # Operate freely: no tool allow-list, and skip interactive permission
+          # prompts (the run is headless in CI). This is the same posture Mad's
+          # own launcher uses for the claude CLI.
           claude_args: |
-            --allowedTools "Bash,Edit,Write,Read,Glob,Grep"
-
-      # If claude-code-action already committed AND published a PR on its own, it
-      # leaves nothing for us to do: the working tree is clean and HEAD is not
-      # ahead of the remote branch. In that case the commit/push/PR steps below
-      # are skipped entirely, so we never create a duplicate or empty PR.
-      - name: Detect pending changes
-        id: pending
-        run: |
-          set -euo pipefail
-          pending=false
-          if [ -n "$(git status --porcelain)" ]; then
-            pending=true
-          elif git rev-parse --verify --quiet "origin/$BRANCH" >/dev/null \
-            && [ "$(git rev-list --count "origin/$BRANCH..HEAD")" != "0" ]; then
-            pending=true
-          fi
-          echo "pending=$pending" >> "$GITHUB_OUTPUT"
-          if [ "$pending" != "true" ]; then
-            echo "::notice::No pending changes (Claude left nothing to publish) — skipping commit, push and PR."
-          fi
-
-      - name: Commit any uncommitted changes
-        if: steps.pending.outputs.pending == 'true'
-        run: |
-          set -euo pipefail
-          if [ -n "$(git status --porcelain)" ]; then
-            git add -A
-            git commit -m "chore: AI-generated work for #${ISSUE_NUMBER}"
-          fi
-
-      - name: Push commits
-        if: steps.pending.outputs.pending == 'true'
-        run: git push origin "HEAD:$BRANCH"
-
-      - name: Open or update PR (non-draft) toward main
-        if: steps.pending.outputs.pending == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ISSUE_TITLE: ${{ github.event.issue.title }}
-        run: |
-          set -euo pipefail
-          if gh pr view "$BRANCH" --json number >/dev/null 2>&1; then
-            echo "::notice::PR for '$BRANCH' already exists — updated by the latest push."
-          else
-            gh pr create \
-              --base main \
-              --head "$BRANCH" \
-              --title "$ISSUE_TITLE" \
-              --body "Automated development for #${ISSUE_NUMBER}.
-
-          Closes #${ISSUE_NUMBER}."
-          fi
+            --dangerously-skip-permissions
