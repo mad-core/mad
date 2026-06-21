@@ -24,7 +24,6 @@ _RATE_LIMIT_STDERR_PATTERNS = (
     "529",
     "session limit",
     "resets ",
-    "billing",
     "temporarily limiting",
     "at capacity",
 )
@@ -70,6 +69,7 @@ class ClaudeCLIProvider:
             "--dangerously-skip-permissions",
             "--output-format",
             "stream-json",
+            "--verbose",
             "-p",
             prompt,
         ]
@@ -126,10 +126,7 @@ class ClaudeCLIProvider:
                     # Detect rate-limit signal. system/api_retry carries the
                     # error enum and session_id, even on the attempt that
                     # ultimately exhausts retries.
-                    if (
-                        obj.get("type") == "system"
-                        and obj.get("subtype") == "api_retry"
-                    ):
+                    if obj.get("type") == "system" and obj.get("subtype") == "api_retry":
                         error = obj.get("error", "rate_limit")
                         if error in _RETRIABLE_ERRORS:
                             rate_limit_detected = True

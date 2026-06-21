@@ -22,7 +22,6 @@ _RATE_LIMIT_STDERR_PATTERNS = (
     "529",
     "session limit",
     "resets ",
-    "billing",
     "temporarily limiting",
     "at capacity",
     "too many requests",

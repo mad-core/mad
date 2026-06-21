@@ -9,6 +9,7 @@ AC → test mapping:
   AC-6  env vars exported correctly (MAD_PROVIDER=opencode)  → test_opencode_ac6_*
   AC-7  --model flag present when model set; absent when None → test_opencode_ac7_*
   AC-8  binary not found → session.error (no crash)          → test_opencode_ac8_*
+  AC-10 provider-level rate-limit detection                  → test_opencode_rate_limit_*
 
 Tests use fake binary scripts in tmp_path — no real `opencode` binary is invoked.
 """
@@ -23,6 +24,7 @@ from pathlib import Path
 import pytest
 
 from mad.adapters.outbound.agents.opencode import OpenCodeProvider
+from mad.core.orchestration.domain.exceptions.rate_limit import RateLimitError
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -452,4 +454,74 @@ async def test_opencode_ac8_binary_not_found_emits_error(
     )
     assert "opencode CLI binary not found" in error_events[0].get("error", ""), (
         f"Expected 'opencode CLI binary not found' in error, got: {error_events[0]}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# AC-10: provider-level rate-limit detection
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_opencode_rate_limit_stderr_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Stderr with a rate-limit pattern and nonzero exit raises RateLimitError."""
+    fake_bin = _make_executable_script(
+        tmp_path / "fake_opencode",
+        """\
+        import sys
+        print("Error: too many requests, rate limit exceeded", file=sys.stderr)
+        sys.exit(1)
+        """,
+    )
+    monkeypatch.setenv("MAD_OPENCODE_BIN", str(fake_bin))
+
+    launcher = OpenCodeProvider()
+    captured_events: list[dict] = []
+
+    async def capture(event_type: str, event: dict) -> None:
+        captured_events.append(event)
+
+    with pytest.raises(RateLimitError) as excinfo:
+        await launcher.run(session_id="s1", prompt="x", workspace=tmp_path, emit=capture)
+
+    error_events = [e for e in captured_events if e.get("type") == "session.error"]
+    assert len(error_events) == 0, (
+        f"session.error must NOT be emitted when stderr triggers RateLimitError, got: {error_events}"
+    )
+    assert excinfo.value.reason == "rate_limit"
+    assert excinfo.value.captured_id is None
+
+
+@pytest.mark.asyncio
+async def test_opencode_billing_error_emits_session_error_not_rate_limit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Negative twin: billing stderr is terminal — session.error emitted, NOT RateLimitError."""
+    fake_bin = _make_executable_script(
+        tmp_path / "fake_opencode",
+        """\
+        import sys
+        print("Error: billing problem, payment required", file=sys.stderr)
+        sys.exit(1)
+        """,
+    )
+    monkeypatch.setenv("MAD_OPENCODE_BIN", str(fake_bin))
+
+    launcher = OpenCodeProvider()
+    captured_events: list[dict] = []
+
+    async def capture(event_type: str, event: dict) -> None:
+        captured_events.append(event)
+
+    # Must NOT raise RateLimitError — billing is non-retriable.
+    await launcher.run(session_id="s1", prompt="x", workspace=tmp_path, emit=capture)
+
+    error_events = [e for e in captured_events if e.get("type") == "session.error"]
+    assert len(error_events) >= 1, (
+        f"Expected session.error for billing error (non-retriable), got: {captured_events}"
+    )
+    assert error_events[-1].get("exit_code") == 1, (
+        f"session.error must carry exit_code=1, got: {error_events[-1]}"
     )
