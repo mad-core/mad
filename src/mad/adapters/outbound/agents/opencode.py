@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import shutil
 from collections.abc import Callable, Coroutine
@@ -19,14 +20,15 @@ class OpenCodeProvider:
         workspace: Path,
         emit: Callable[[str, dict | None], Coroutine[Any, Any, None]],
         model: str | None = None,
-    ) -> None:
+        conversation_id: str | None = None,
+    ) -> str | None:
         executable = os.environ.get("MAD_OPENCODE_BIN") or shutil.which("opencode")
         if not executable:
             await emit(
                 "session.error",
                 {"type": "session.error", "error": "opencode CLI binary not found"},
             )
-            return
+            return None
 
         timeout = float(os.environ.get("MAD_OPENCODE_TIMEOUT_S", "600"))
 
@@ -35,7 +37,9 @@ class OpenCodeProvider:
         env["MAD_HOOK_SOCKET"] = resolve_hook_socket_path()
         env["MAD_PROVIDER"] = "opencode"
 
-        args = [executable, "run"]
+        args = [executable, "run", "--format", "json"]
+        if conversation_id is not None:
+            args += ["--session", conversation_id]
         if model is not None:
             args += ["--model", model]
         args.append(prompt)
@@ -48,11 +52,32 @@ class OpenCodeProvider:
             env=env,
         )
 
+        captured_id: str | None = None
+        conversation_started_emitted = False
+
         try:
             async with asyncio.timeout(timeout):
                 async for line_bytes in proc.stdout:
                     line = line_bytes.decode(errors="replace").rstrip("\n")
                     await emit("agent.output", {"type": "agent.output", "line": line})
+                    # Parse each JSON line; sessionID is present on every event.
+                    # Emit agent.conversation_started the first time we see it.
+                    if not conversation_started_emitted:
+                        try:
+                            obj = json.loads(line)
+                        except (json.JSONDecodeError, ValueError):
+                            continue
+                        sid = obj.get("sessionID")
+                        if sid and isinstance(sid, str):
+                            captured_id = sid
+                            conversation_started_emitted = True
+                            await emit(
+                                "agent.conversation_started",
+                                {
+                                    "conversation_id": sid,
+                                    "provider": "opencode",
+                                },
+                            )
                 await proc.wait()
         except TimeoutError:
             proc.kill()
@@ -61,7 +86,7 @@ class OpenCodeProvider:
                 "session.error",
                 {"type": "session.error", "error": f"timed out after {timeout}s"},
             )
-            return
+            return captured_id
         except asyncio.CancelledError:
             proc.kill()
             await proc.wait()
@@ -87,3 +112,4 @@ class OpenCodeProvider:
                     "exit_code": proc.returncode,
                 },
             )
+        return captured_id

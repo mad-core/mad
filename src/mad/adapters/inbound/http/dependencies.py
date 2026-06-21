@@ -71,16 +71,29 @@ def build_dependencies() -> tuple[
 
 def touch_session(store: SessionStore):
     """Return an ``on_emit`` hook that bumps ``Session.updated_at`` for the
-    in-memory entity matching ``event.session_id`` (if any).
+    in-memory entity matching ``event.session_id`` (if any), and captures
+    the Claude CLI conversation ID from ``agent.claude_cli.hook.SessionStart``
+    events.
 
     Sessions only present on disk (rehydrated lazily by use cases) derive
     their ``updated_at`` from the persisted event stream, not from this
     hook — so missing entries here are not a bug.
+
+    The ``SessionStart`` hook fires ~1 s after the subprocess starts —
+    before any tool runs and well before the 600 s timeout — so the
+    conversation ID is available even for runs that time out before the
+    ``result`` event reaches stdout.
     """
 
     def _on_emit(event: Event) -> None:
         session = store.sessions.get(event.session_id)
         if session is not None:
             session.touch(event.timestamp)
+            if (
+                event.type == "agent.claude_cli.hook.SessionStart"
+                and event.data is not None
+                and isinstance(event.data.get("session_id"), str)
+            ):
+                session.last_conversation_id = event.data["session_id"]
 
     return _on_emit
