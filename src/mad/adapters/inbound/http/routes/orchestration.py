@@ -111,6 +111,15 @@ class EnqueueTaskRequest(BaseModel):
             " or deployment default."
         ),
     )
+    conversation_mode: Literal["new", "resume"] = Field(
+        default="new",
+        description=(
+            "``new`` (default) starts a fresh agent conversation. "
+            "``resume`` passes ``--resume``/``--session`` to the launcher using the"
+            " session's last captured conversation id; falls back to ``new`` and"
+            " emits ``agent.conversation_resume_skipped`` when no id is stored yet."
+        ),
+    )
 
 
 class EnqueueTaskResponse(BaseModel):
@@ -127,6 +136,7 @@ class TaskResponse(BaseModel):
     scheduled_for: str
     created_at: datetime
     model: str | None = None
+    conversation_mode: Literal["new", "resume"] = "new"
 
 
 class ListTasksResponse(BaseModel):
@@ -319,6 +329,7 @@ async def enqueue_task(
             content=payload.content,
             scheduled_for=payload.scheduled_for,
             model=payload.model,
+            conversation_mode=payload.conversation_mode,
         )
     )
     return EnqueueTaskResponse(
@@ -347,6 +358,7 @@ async def list_tasks(session_id: str, request: Request) -> ListTasksResponse:
                 scheduled_for=t.scheduled_for,
                 created_at=t.created_at,
                 model=t.model,
+                conversation_mode=t.conversation_mode,
             )
             for t in output.queued
         ],
@@ -358,6 +370,7 @@ async def list_tasks(session_id: str, request: Request) -> ListTasksResponse:
                 scheduled_for=output.in_flight.scheduled_for,
                 created_at=output.in_flight.created_at,
                 model=output.in_flight.model,
+                conversation_mode=output.in_flight.conversation_mode,
             )
             if output.in_flight is not None
             else None
