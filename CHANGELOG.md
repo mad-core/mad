@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.5.11 (2026-06-21)
+
+### Features
+
+- **config**: Make workspace base dir configurable via MAD_WORKSPACE_DIR
+  ([`f137b53`](https://github.com/jlsaco/mad/commit/f137b536f9714bedc4fb932b5e4af0af950d7115))
+
+
 ## v0.5.10 (2026-06-14)
 
 ### Features
