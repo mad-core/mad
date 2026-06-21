@@ -109,6 +109,7 @@ class InMemoryTaskProjection:
         for index, task in enumerate(queue):
             if task.task_id == task_id:
                 self._in_flight[event.session_id] = queue.pop(index)
+                self._retry_info.pop(event.session_id, None)
                 return
         # Dispatched without a matching queued task: silently ignore.
         # This shouldn't happen in normal flow; if it does, the next

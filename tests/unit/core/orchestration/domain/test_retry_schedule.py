@@ -7,20 +7,17 @@ import pytest
 import mad.core.orchestration.domain.retry_schedule as sched
 
 
-def test_backoff_doubles_each_attempt_up_to_cap() -> None:
+def test_backoff_doubles_each_attempt_up_to_cap(monkeypatch: pytest.MonkeyPatch) -> None:
     """Without jitter, each attempt doubles until the cap is reached."""
+    monkeypatch.setattr(sched, "_JITTER_FRACTION", 0.0)
+    monkeypatch.setattr(sched, "_MIN_BACKOFF_S", 0.0)
 
-    # Reload with jitter disabled via monkeypatching would require pytest
-    # fixtures; test the cap boundary directly instead.
-    # attempt 0 → 30 s, 1 → 60, 2 → 120, 3 → 240, 4 → 480, 5 → 960,
-    # 6 → 1920, 7 → 3600 (capped).
-    raw_values = [sched._BASE_S * (sched._MULTIPLIER**i) for i in range(8)]
-    capped = [min(v, sched._CAP_S) for v in raw_values]
-    assert capped[0] == 30.0
-    assert capped[1] == 60.0
-    assert capped[2] == 120.0
-    assert capped[3] == 240.0
-    assert capped[7] == sched._CAP_S
+    assert sched.backoff_s(0) == pytest.approx(30.0)
+    assert sched.backoff_s(1) == pytest.approx(60.0)
+    assert sched.backoff_s(2) == pytest.approx(120.0)
+    assert sched.backoff_s(3) == pytest.approx(240.0)
+    assert sched.backoff_s(7) == pytest.approx(3600.0)  # capped
+    assert sched.backoff_s(10) == pytest.approx(3600.0)  # still capped
 
 
 def test_backoff_minimum_is_positive(monkeypatch) -> None:

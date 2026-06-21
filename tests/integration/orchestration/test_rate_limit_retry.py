@@ -152,9 +152,7 @@ async def test_rate_limit_retry_then_success(
         await _wait_for_event(h.store, session_id="sesn_rl", event_type="task.completed")
 
         # task.retrying carries attempt=1, reason, retry_after_s
-        retrying = next(
-            c for c in h.store.calls if c[0] == "sesn_rl" and c[1] == "task.retrying"
-        )
+        retrying = next(c for c in h.store.calls if c[0] == "sesn_rl" and c[1] == "task.retrying")
         assert retrying[2]["attempt"] == 1
         assert retrying[2]["reason"] == "rate_limit"
         assert retrying[2]["retry_after_s"] > 0
@@ -199,15 +197,11 @@ async def test_rate_limit_ceiling_emits_task_failed(
         )
         await _wait_for_event(h.store, session_id="sesn_ceil", event_type="task.failed")
 
-        failed = next(
-            c for c in h.store.calls if c[0] == "sesn_ceil" and c[1] == "task.failed"
-        )
+        failed = next(c for c in h.store.calls if c[0] == "sesn_ceil" and c[1] == "task.failed")
         assert failed[2]["reason"] == "rate_limit_exhausted"
 
         # task.completed must NOT be emitted
-        completed = [
-            c for c in h.store.calls if c[0] == "sesn_ceil" and c[1] == "task.completed"
-        ]
+        completed = [c for c in h.store.calls if c[0] == "sesn_ceil" and c[1] == "task.completed"]
         assert not completed
     finally:
         await h.stop()
@@ -235,14 +229,10 @@ async def test_non_rate_limit_error_immediate_task_failed(tmp_path: Path) -> Non
         await _wait_for_event(h.store, session_id="sesn_nrl", event_type="task.failed")
 
         # task.retrying must NOT appear
-        retrying = [
-            c for c in h.store.calls if c[0] == "sesn_nrl" and c[1] == "task.retrying"
-        ]
+        retrying = [c for c in h.store.calls if c[0] == "sesn_nrl" and c[1] == "task.retrying"]
         assert not retrying
 
-        failed = next(
-            c for c in h.store.calls if c[0] == "sesn_nrl" and c[1] == "task.failed"
-        )
+        failed = next(c for c in h.store.calls if c[0] == "sesn_nrl" and c[1] == "task.failed")
         # Reason is the exception message surfaced verbatim by the dispatcher.
         assert failed[2]["reason"] == "bad prompt"
     finally:

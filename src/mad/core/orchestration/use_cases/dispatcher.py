@@ -103,6 +103,7 @@ class Dispatcher:
         self._launch_task: asyncio.Task[None] | None = None
         self._tick_task: asyncio.Task[None] | None = None
         self._in_flight: tuple[str, UUID] | None = None
+        self._stopping = False
         self._subscription: AsyncIterator[Event] | None = None
         # Track tasks that the bus loop has already accounted for via
         # task.queued_for_window so the periodic tick doesn't re-emit
@@ -131,6 +132,7 @@ class Dispatcher:
 
     async def stop(self) -> None:
         """Cancel the dispatch loop, the tick loop, and the in-flight launcher task."""
+        self._stopping = True
         for task in (self._launch_task, self._loop_task, self._tick_task):
             if task is None:
                 continue
@@ -216,6 +218,8 @@ class Dispatcher:
 
     async def _maybe_dispatch_next(self) -> None:
         """Single-dispatch invariant — start at most one task across all sessions."""
+        if self._stopping:
+            return
         if self._in_flight is not None:
             return
         next_task = self._find_next_dispatchable()
