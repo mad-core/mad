@@ -73,8 +73,9 @@ class ClaudeCLIProvider:
                 async for line_bytes in proc.stdout:
                     line = line_bytes.decode(errors="replace").rstrip("\n")
                     await emit("agent.output", {"type": "agent.output", "line": line})
-                    # Parse each JSON line to extract the conversation ID.
-                    # Claude CLI stream-json emits it on result and api_retry events.
+                    # Parse each JSON line for session_id. The stream-json
+                    # format carries it on system/init (first event), api_retry,
+                    # and result — so we capture it as early as the first line.
                     if not conversation_started_emitted:
                         try:
                             obj = json.loads(line)
