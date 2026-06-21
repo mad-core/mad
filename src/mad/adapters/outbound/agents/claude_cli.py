@@ -8,7 +8,12 @@ from collections.abc import Callable, Coroutine
 from pathlib import Path
 from typing import Any
 
-from mad.adapters.outbound.agents._subprocess import _scrub, _subprocess_env
+from mad.adapters.outbound.agents._subprocess import (
+    _STDOUT_BUFFER_LIMIT,
+    _iter_stdout_lines,
+    _scrub,
+    _subprocess_env,
+)
 from mad.adapters.outbound.agents.hook_socket import resolve_hook_socket_path
 from mad.core.orchestration.domain.exceptions.rate_limit import RateLimitError
 
@@ -84,6 +89,7 @@ class ClaudeCLIProvider:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env=env,
+            limit=_STDOUT_BUFFER_LIMIT,
         )
 
         captured_id: str | None = None
@@ -93,8 +99,7 @@ class ClaudeCLIProvider:
 
         try:
             async with asyncio.timeout(timeout):
-                async for line_bytes in proc.stdout:
-                    line = line_bytes.decode(errors="replace").rstrip("\n")
+                async for line in _iter_stdout_lines(proc.stdout):
                     await emit("agent.output", {"type": "agent.output", "line": line})
                     # Parse every JSON line. The stream-json format carries
                     # session_id on system/init (first line), api_retry, and

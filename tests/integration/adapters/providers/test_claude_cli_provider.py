@@ -464,3 +464,49 @@ async def test_claude_cli_sets_max_retries_env_zero(
 
     value = marker.read_text()
     assert value == "0", f"CLAUDE_CODE_MAX_RETRIES must be '0' in subprocess env, got: {value!r}"
+
+
+# ---------------------------------------------------------------------------
+# Issue #70: a single stdout line larger than asyncio's 64 KB default buffer
+# must not raise LimitOverrunError and kill the task.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_claude_cli_long_stdout_line_emitted_without_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A 200 KB single stdout line (far past asyncio's 64 KB default) must be
+    emitted intact as agent.output and finish with session.status_idle — not
+    die with LimitOverrunError (issue #70)."""
+    line_len = 200_000  # > 64 KB asyncio default that used to overflow the buffer
+    fake_bin = _make_executable_script(
+        tmp_path / "fake_claude",
+        f"""\
+        import sys
+        print("z" * {line_len})
+        sys.exit(0)
+        """,
+    )
+    monkeypatch.setenv("MAD_CLAUDE_CLI_BIN", str(fake_bin))
+
+    launcher = ClaudeCLIProvider()
+    events = await _collect_emit(launcher, prompt="test", workspace=tmp_path)
+
+    error_events = [e for e in events if e.get("type") == "session.error"]
+    assert error_events == [], (
+        f"a long stdout line must not produce session.error, got: {error_events}"
+    )
+    output_events = [e for e in events if e.get("type") == "agent.output"]
+    assert len(output_events) == 1, (
+        f"expected exactly one agent.output for the long line, got {len(output_events)}"
+    )
+    assert len(output_events[0]["line"]) == line_len, (
+        f"long line must be emitted intact: expected {line_len} chars, "
+        f"got {len(output_events[0]['line'])}"
+    )
+    idle_events = [e for e in events if e.get("type") == "session.status_idle"]
+    assert len(idle_events) == 1, (
+        f"expected session.status_idle after the long line, "
+        f"got types: {[e.get('type') for e in events]}"
+    )
