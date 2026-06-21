@@ -39,6 +39,16 @@ make serve     # uvicorn mad.adapters.inbound.http.app:create_app --factory
 make help      # full target list
 ```
 
+With Docker (one or more isolated instances on a single host):
+
+```bash
+cp .env.example .env
+docker compose -f compose.example.yml up -d --build
+```
+
+See [`docs/docker.md`](docs/docker.md) for per-instance credential setup, the
+workspace bind-mount model, and running multiple instances.
+
 ## Quickstart
 
 A session has two parts: an **agent spec** (which launcher to run) and a list of **resources** to mount into the isolated workspace. Resources can be `github_repository` (cloned into `mount_path`) or `file` (literal `content` written at `mount_path`). The prompt is sent as a separate message after creation; that's what kicks the agent off.
@@ -118,6 +128,7 @@ The "Multi Agent Develop — takes an idea and ships it end-to-end" framing belo
 
 - [`docs/adr/`](docs/adr/) — Architecture Decision Records (start at `README.md`).
 - [`docs/backlog.md`](docs/backlog.md) — improvements deferred past v0.1.
+- [`docs/docker.md`](docs/docker.md) — operator's guide for running one or more isolated Mad instances with Docker.
 - [`docs/sandbox-bwrap.md`](docs/sandbox-bwrap.md) — operator's guide for hardening the sandbox with bubblewrap.
 - [`docs/ai-develop-on-issue.md`](docs/ai-develop-on-issue.md) — operator's guide for the label-gated GitHub Action that runs Claude on an issue.
 - [`docs/testing-heuristics.md`](docs/testing-heuristics.md) — the eight heuristics every test must satisfy (hard rule 10).
