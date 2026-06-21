@@ -27,9 +27,11 @@ from uuid import UUID
 from mad.core.events.domain.event import Event
 from mad.core.events.ports.event_log_query import EventLogQuery, EventQuery
 from mad.core.orchestration.domain.task import Task
+from mad.core.orchestration.ports.task_queue import RetryInfo
 
 _TASK_QUEUED = "task.queued"
 _TASK_DISPATCHED = "task.dispatched"
+_TASK_RETRYING = "task.retrying"
 _TERMINAL_TYPES = frozenset({"task.completed", "task.failed", "task.cancelled"})
 
 # Bootstrap limit. EventLogQuery loads sessions/*.jsonl into memory;
@@ -45,6 +47,7 @@ class InMemoryTaskProjection:
     def __init__(self) -> None:
         self._queued: dict[str, list[Task]] = defaultdict(list)
         self._in_flight: dict[str, Task] = {}
+        self._retry_info: dict[str, RetryInfo] = {}
 
     # -- TaskQueue port ----------------------------------------------------
 
@@ -53,6 +56,9 @@ class InMemoryTaskProjection:
 
     def in_flight(self, session_id: str) -> Task | None:
         return self._in_flight.get(session_id)
+
+    def retry_info(self, session_id: str) -> RetryInfo | None:
+        return self._retry_info.get(session_id)
 
     def pending_session_ids(self) -> list[str]:
         # Sorted so callers see a deterministic order regardless of
@@ -75,6 +81,8 @@ class InMemoryTaskProjection:
             self._on_queued(event)
         elif event.type == _TASK_DISPATCHED:
             self._on_dispatched(event)
+        elif event.type == _TASK_RETRYING:
+            self._on_retrying(event)
         elif event.type in _TERMINAL_TYPES:
             self._on_terminal(event)
 
@@ -106,11 +114,19 @@ class InMemoryTaskProjection:
         # This shouldn't happen in normal flow; if it does, the next
         # terminal event will tidy up via _on_terminal.
 
+    def _on_retrying(self, event: Event) -> None:
+        self._retry_info[event.session_id] = RetryInfo(
+            attempt=event.data["attempt"],
+            retry_after_s=event.data["retry_after_s"],
+            reason=event.data["reason"],
+        )
+
     def _on_terminal(self, event: Event) -> None:
         task_id = UUID(event.data["task_id"])
         in_flight = self._in_flight.get(event.session_id)
         if in_flight is not None and in_flight.task_id == task_id:
             del self._in_flight[event.session_id]
+            self._retry_info.pop(event.session_id, None)
             return
         queue = self._queued.get(event.session_id, [])
         self._queued[event.session_id] = [t for t in queue if t.task_id != task_id]

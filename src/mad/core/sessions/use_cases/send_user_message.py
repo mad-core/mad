@@ -19,6 +19,7 @@ from typing import Any
 
 from mad.core.events.emitter import EventEmitter
 from mad.core.orchestration.domain.exceptions.base import SessionHasInFlightTask
+from mad.core.orchestration.domain.exceptions.rate_limit import RateLimitError
 from mad.core.orchestration.domain.model_config import (
     DeploymentModelConfig,
     resolve_effective_model,
@@ -168,6 +169,21 @@ async def _run_launcher(
         )
         if captured_id is not None:
             session.last_conversation_id = captured_id
+    except RateLimitError:
+        if propagate_failures:
+            # Let the dispatcher catch this and drive the retry loop.
+            # Do NOT emit session.error — this run is not terminal yet.
+            raise
+        # Fire-and-forget path (/messages): no dispatcher to retry, so
+        # treat rate-limit as a terminal session error.
+        if session.status == "running":
+            await emitter.emit(
+                session_id,
+                "session.error",
+                {"error": "rate limit reached; retry not available on /messages path"},
+            )
+            session.mark_error()
+        # primary_failure stays None so auto-sync still runs.
     except Exception as exc:
         if session.status == "running":
             await emitter.emit(session_id, "session.error", {"error": str(exc)})

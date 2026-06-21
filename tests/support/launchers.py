@@ -12,6 +12,10 @@ from collections.abc import Callable, Coroutine
 from pathlib import Path
 from typing import Any
 
+# Sentinel type used by ScriptedLauncher.script_raising to distinguish
+# error runs from normal event-list runs.
+_ScriptEntry = tuple[list[dict], str | None] | BaseException
+
 
 class RecordingLauncher:
     """AgentLauncher test double that records the prompt of every run
@@ -74,18 +78,22 @@ class ScriptedLauncher:
 
     The optional ``return_conversation_id`` constructor argument provides
     the conversation id that every run returns (default ``None``).
-    Per-run overrides can be set via ``script_with_ids``.
+    Per-run overrides can be set via ``script_with_ids`` or
+    ``script_raising`` (the latter supports exception-raising runs for
+    rate-limit retry tests).
     """
 
     def __init__(self, return_conversation_id: str | None = None) -> None:
         self._queue: deque[list[dict]] = deque()
         self._ids: deque[str | None] = deque()
+        self._exc_queue: deque[BaseException | None] = deque()
         self._default_id = return_conversation_id
         self.calls: list[dict[str, Any]] = []
 
     def script(self, runs: list[list[dict]]) -> None:
         self._queue = deque(runs)
         self._ids = deque()
+        self._exc_queue = deque()
 
     def script_with_ids(self, runs: list[tuple[list[dict], str | None]]) -> None:
         """Script runs where each run may return a specific conversation id.
@@ -94,6 +102,32 @@ class ScriptedLauncher:
         """
         self._queue = deque(r for r, _ in runs)
         self._ids = deque(cid for _, cid in runs)
+        self._exc_queue = deque()
+
+    def script_raising(self, entries: list[_ScriptEntry]) -> None:
+        """Script runs that may raise exceptions (e.g. ``RateLimitError``).
+
+        Each entry is either:
+        - ``(events, conversation_id)`` — emit events then return the id.
+        - A ``BaseException`` instance — raise it immediately (no events
+          emitted), simulating a rate-limit or crash failure.
+
+        Used by rate-limit retry tests so the dispatcher's retry loop
+        can be exercised without a real subprocess.
+        """
+        self._queue = deque()
+        self._ids = deque()
+        self._exc_queue = deque()
+        for entry in entries:
+            if isinstance(entry, BaseException):
+                self._queue.append([])
+                self._ids.append(None)
+                self._exc_queue.append(entry)
+            else:
+                events, cid = entry
+                self._queue.append(events)
+                self._ids.append(cid)
+                self._exc_queue.append(None)
 
     async def run(
         self,
@@ -113,6 +147,15 @@ class ScriptedLauncher:
                 "conversation_id": conversation_id,
             }
         )
+        # Check for a scripted exception before emitting any events.
+        exc: BaseException | None = self._exc_queue.popleft() if self._exc_queue else None
+        if exc is not None:
+            if self._queue:
+                self._queue.popleft()
+            if self._ids:
+                self._ids.popleft()
+            raise exc
+
         if self._queue:
             events = self._queue.popleft()
         else:
