@@ -1,6 +1,21 @@
 # CHANGELOG
 
 
+## v0.5.13 (2026-06-21)
+
+### Bug Fixes
+
+- **agents**: Treat billing errors as terminal and require --verbose for stream-json
+  ([`d7f3496`](https://github.com/jlsaco/mad/commit/d7f34965fe172fa7d7c197b3e42bf9db05e5741b))
+
+### Features
+
+- **agents**: Detect rate-limit exits in claude_cli and opencode providers
+  ([`59f37a5`](https://github.com/jlsaco/mad/commit/59f37a5134696b28f35114922be7453612e948b0))
+- **http**: Expose retry status and retry_info on task list response
+  ([`24a0cdd`](https://github.com/jlsaco/mad/commit/24a0cdd5272b3656b94861871725ef7219d4c3f4))
+
+
 ## v0.5.12 (2026-06-21)
 
 ### Bug Fixes
