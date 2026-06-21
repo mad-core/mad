@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import shutil
 from collections.abc import Callable, Coroutine
@@ -26,14 +27,15 @@ class ClaudeCLIProvider:
         workspace: Path,
         emit: Callable[[str, dict | None], Coroutine[Any, Any, None]],
         model: str | None = None,
-    ) -> None:
+        conversation_id: str | None = None,
+    ) -> str | None:
         executable = os.environ.get("MAD_CLAUDE_CLI_BIN") or shutil.which("claude")
         if not executable:
             await emit(
                 "session.error",
                 {"type": "session.error", "error": "claude CLI binary not found"},
             )
-            return
+            return None
 
         timeout = float(os.environ.get("MAD_CLAUDE_CLI_TIMEOUT_S", "600"))
 
@@ -42,7 +44,16 @@ class ClaudeCLIProvider:
         env["MAD_HOOK_SOCKET"] = resolve_hook_socket_path()
         env["MAD_PROVIDER"] = "claude_cli"
 
-        args = [executable, "--dangerously-skip-permissions", "-p", prompt]
+        args = [
+            executable,
+            "--dangerously-skip-permissions",
+            "--output-format",
+            "stream-json",
+            "-p",
+            prompt,
+        ]
+        if conversation_id is not None:
+            args += ["--resume", conversation_id]
         if model is not None:
             args += ["--model", model]
 
@@ -54,11 +65,32 @@ class ClaudeCLIProvider:
             env=env,
         )
 
+        captured_id: str | None = None
+        conversation_started_emitted = False
+
         try:
             async with asyncio.timeout(timeout):
                 async for line_bytes in proc.stdout:
                     line = line_bytes.decode(errors="replace").rstrip("\n")
                     await emit("agent.output", {"type": "agent.output", "line": line})
+                    # Parse each JSON line to extract the conversation ID.
+                    # Claude CLI stream-json emits it on result and api_retry events.
+                    if not conversation_started_emitted:
+                        try:
+                            obj = json.loads(line)
+                        except (json.JSONDecodeError, ValueError):
+                            continue
+                        sid = obj.get("session_id")
+                        if sid and isinstance(sid, str):
+                            captured_id = sid
+                            conversation_started_emitted = True
+                            await emit(
+                                "agent.conversation_started",
+                                {
+                                    "conversation_id": sid,
+                                    "provider": "claude_cli",
+                                },
+                            )
                 await proc.wait()
         except TimeoutError:
             proc.kill()
@@ -67,7 +99,7 @@ class ClaudeCLIProvider:
                 "session.error",
                 {"type": "session.error", "error": f"timed out after {timeout}s"},
             )
-            return
+            return captured_id
         except asyncio.CancelledError:
             proc.kill()
             await proc.wait()
@@ -93,3 +125,4 @@ class ClaudeCLIProvider:
                     "exit_code": proc.returncode,
                 },
             )
+        return captured_id

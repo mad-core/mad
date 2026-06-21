@@ -26,6 +26,7 @@ class RecordingLauncher:
         self.calls: list[str] = []
         self.session_ids: list[str] = []
         self.models: list[str | None] = []
+        self.conversation_ids: list[str | None] = []
 
     async def run(
         self,
@@ -34,11 +35,14 @@ class RecordingLauncher:
         workspace: Path,
         emit: Callable[[str, dict | None], Coroutine[Any, Any, None]],
         model: str | None = None,
-    ) -> None:
+        conversation_id: str | None = None,
+    ) -> str | None:
         self.session_ids.append(session_id)
         self.calls.append(prompt)
         self.models.append(model)
+        self.conversation_ids.append(conversation_id)
         await emit("session.status_idle", {"stop_reason": "end_turn"})
+        return None
 
 
 class RaisingLauncher:
@@ -59,21 +63,37 @@ class RaisingLauncher:
         workspace: Path,
         emit: Callable[[str, dict | None], Coroutine[Any, Any, None]],
         model: str | None = None,
-    ) -> None:
+        conversation_id: str | None = None,
+    ) -> str | None:
         raise self._exc
 
 
 class ScriptedLauncher:
     """AgentLauncher test double. Each call to run() consumes the next
     scripted run from the queue and emits its events in order.
+
+    The optional ``return_conversation_id`` constructor argument provides
+    the conversation id that every run returns (default ``None``).
+    Per-run overrides can be set via ``script_with_ids``.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, return_conversation_id: str | None = None) -> None:
         self._queue: deque[list[dict]] = deque()
+        self._ids: deque[str | None] = deque()
+        self._default_id = return_conversation_id
         self.calls: list[dict[str, Any]] = []
 
     def script(self, runs: list[list[dict]]) -> None:
         self._queue = deque(runs)
+        self._ids = deque()
+
+    def script_with_ids(self, runs: list[tuple[list[dict], str | None]]) -> None:
+        """Script runs where each run may return a specific conversation id.
+
+        ``runs`` is a list of ``(events, conversation_id)`` tuples.
+        """
+        self._queue = deque(r for r, _ in runs)
+        self._ids = deque(cid for _, cid in runs)
 
     async def run(
         self,
@@ -82,9 +102,16 @@ class ScriptedLauncher:
         workspace: Path,
         emit: Callable[[str, dict | None], Coroutine[Any, Any, None]],
         model: str | None = None,
-    ) -> None:
+        conversation_id: str | None = None,
+    ) -> str | None:
         self.calls.append(
-            {"session_id": session_id, "prompt": prompt, "workspace": workspace, "model": model}
+            {
+                "session_id": session_id,
+                "prompt": prompt,
+                "workspace": workspace,
+                "model": model,
+                "conversation_id": conversation_id,
+            }
         )
         if self._queue:
             events = self._queue.popleft()
@@ -92,3 +119,6 @@ class ScriptedLauncher:
             events = [{"type": "session.status_idle", "stop_reason": "end_turn"}]
         for event in events:
             await emit(event["type"], event)
+        if self._ids:
+            return self._ids.popleft()
+        return self._default_id
