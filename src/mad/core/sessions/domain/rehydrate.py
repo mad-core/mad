@@ -35,6 +35,7 @@ def rehydrate_from_events(session_id: str, events: list[dict[str, Any]]) -> Sess
     workspace = ""
     working_directory = ""
     model: str | None = None
+    effort: str | None = None
     status = "created"
     created_at: datetime | None = None
     latest_at: datetime | None = None
@@ -50,6 +51,7 @@ def rehydrate_from_events(session_id: str, events: list[dict[str, Any]]) -> Sess
             agent = {"name": event.get("agent", ""), "provider": event.get("provider") or "unknown"}
             working_directory = event.get("working_directory", "")
             model = event.get("model")
+            effort = event.get("effort")
         elif etype == "session.status_running":
             status = "running"
         elif etype == "session.status_idle":
@@ -100,6 +102,7 @@ def rehydrate_from_events(session_id: str, events: list[dict[str, Any]]) -> Sess
         workspace=workspace,
         working_directory=working_directory,
         model=model,
+        effort=effort,
         status=status,
         dispatch_policy=dispatch_policy,
         priority=priority,

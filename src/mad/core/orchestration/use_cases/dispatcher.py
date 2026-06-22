@@ -54,6 +54,10 @@ from mad.core.orchestration.domain.dispatch_policy import (
     can_dispatch,
     next_window_opening,
 )
+from mad.core.orchestration.domain.effort_config import (
+    DeploymentEffortConfig,
+    resolve_effective_effort,
+)
 from mad.core.orchestration.domain.model_config import (
     DeploymentModelConfig,
     resolve_effective_model,
@@ -82,6 +86,7 @@ class Dispatcher:
         tick_interval_s: float = _DEFAULT_TICK_INTERVAL_S,
         deployment_policy: DeploymentDispatchPolicy | None = None,
         deployment_model_config: DeploymentModelConfig | None = None,
+        deployment_effort_config: DeploymentEffortConfig | None = None,
     ) -> None:
         self._projection = projection
         self._emitter = emitter
@@ -96,6 +101,9 @@ class Dispatcher:
         self._deployment_policy = deployment_policy or DeploymentDispatchPolicy()
         # Process-global model default (issue #55). None means omit --model.
         self._deployment_model_config = deployment_model_config
+        # Process-global effort default (issue #60). None means omit the
+        # effort flag (--effort / --variant).
+        self._deployment_effort_config = deployment_effort_config
 
         self._loop_task: asyncio.Task[None] | None = None
         self._launch_task: asyncio.Task[None] | None = None
@@ -290,6 +298,16 @@ class Dispatcher:
                     else None
                 ),
             )
+            # Effort precedence is session > deployment only (issue #60);
+            # there is no task-level effort, unlike model above.
+            effective_effort = resolve_effective_effort(
+                session_effort=session.effort,
+                deployment_default=(
+                    self._deployment_effort_config.default_effort
+                    if self._deployment_effort_config is not None
+                    else None
+                ),
+            )
             await _run_launcher(
                 session=session,
                 session_id=task.session_id,
@@ -298,6 +316,7 @@ class Dispatcher:
                 emitter=self._emitter,
                 propagate_failures=True,
                 model=effective_model,
+                effort=effective_effort,
             )
         except Exception as exc:
             await self._emitter.emit(

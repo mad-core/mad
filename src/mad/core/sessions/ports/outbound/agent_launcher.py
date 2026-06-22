@@ -29,11 +29,17 @@ class AgentLauncher(Protocol):
         workspace: Path,
         emit: Callable[[str, dict[str, Any] | None], Coroutine[Any, Any, None]],
         model: str | None = None,
+        effort: str | None = None,
     ) -> None:
         """Launch the external agent and stream events via ``emit``.
 
         ``model`` is an optional model identifier forwarded to the underlying
         CLI (e.g. ``--model`` for claude).  ``None`` means omit the flag and
         let the provider's machine-configured default apply.
+
+        ``effort`` is an optional reasoning-effort identifier forwarded to the
+        underlying CLI (``--effort`` for claude, ``--variant`` for opencode,
+        issue #60). ``None`` means omit the flag and use the provider's default.
+        Effort is an opaque pass-through string — Mad does not validate it.
         """
         ...

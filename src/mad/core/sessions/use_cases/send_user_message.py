@@ -18,6 +18,10 @@ from pathlib import Path
 from typing import Any
 
 from mad.core.events.emitter import EventEmitter
+from mad.core.orchestration.domain.effort_config import (
+    DeploymentEffortConfig,
+    resolve_effective_effort,
+)
 from mad.core.orchestration.domain.exceptions.base import SessionHasInFlightTask
 from mad.core.orchestration.domain.model_config import (
     DeploymentModelConfig,
@@ -52,12 +56,14 @@ class SendUserMessageUseCase:
         emitter: EventEmitter,
         task_queue: TaskQueue | None = None,
         deployment_model_config: DeploymentModelConfig | None = None,
+        deployment_effort_config: DeploymentEffortConfig | None = None,
     ) -> None:
         self._sessions = sessions_index
         self._get_launcher = get_launcher
         self._emitter = emitter
         self._task_queue = task_queue
         self._deployment_model_config = deployment_model_config
+        self._deployment_effort_config = deployment_effort_config
 
     def execute(self, payload: SendUserMessageInput) -> None:
         """Validate and schedule the agent run. Returns immediately."""
@@ -77,6 +83,14 @@ class SendUserMessageUseCase:
                 else None
             ),
         )
+        effective_effort = resolve_effective_effort(
+            session_effort=session.effort,
+            deployment_default=(
+                self._deployment_effort_config.default_effort
+                if self._deployment_effort_config is not None
+                else None
+            ),
+        )
         # Fire-and-forget: emitter handles both persistence and publish.
         asyncio.create_task(
             self._emitter.emit(
@@ -91,6 +105,7 @@ class SendUserMessageUseCase:
                 get_launcher=self._get_launcher,
                 emitter=self._emitter,
                 model=effective_model,
+                effort=effective_effort,
             )
         )
 
@@ -103,6 +118,7 @@ async def _run_launcher(
     emitter: EventEmitter,
     propagate_failures: bool = False,
     model: str | None = None,
+    effort: str | None = None,
 ) -> None:
     """Internal coroutine: run the launcher and handle lifecycle events.
 
@@ -115,6 +131,10 @@ async def _run_launcher(
 
     ``model`` is the resolved effective model to forward to the launcher.
     ``None`` means omit ``--model`` and use the provider's own default.
+
+    ``effort`` is the resolved effective reasoning effort (issue #60),
+    forwarded to the launcher as ``--effort`` (claude) / ``--variant``
+    (opencode). ``None`` means omit the flag and use the provider's default.
     """
     await emitter.emit(session_id, "session.status_running")
     session.mark_running()
@@ -144,6 +164,7 @@ async def _run_launcher(
             workspace=workspace,
             emit=emit,
             model=model,
+            effort=effort,
         )
     except Exception as exc:
         if session.status == "running":
@@ -166,6 +187,7 @@ async def _run_launcher(
             workspace=workspace,
             emit=emit,
             model=model,
+            effort=effort,
         )
     except Exception as exc:
         await emitter.emit(

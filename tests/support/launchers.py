@@ -26,6 +26,7 @@ class RecordingLauncher:
         self.calls: list[str] = []
         self.session_ids: list[str] = []
         self.models: list[str | None] = []
+        self.efforts: list[str | None] = []
 
     async def run(
         self,
@@ -34,10 +35,12 @@ class RecordingLauncher:
         workspace: Path,
         emit: Callable[[str, dict | None], Coroutine[Any, Any, None]],
         model: str | None = None,
+        effort: str | None = None,
     ) -> None:
         self.session_ids.append(session_id)
         self.calls.append(prompt)
         self.models.append(model)
+        self.efforts.append(effort)
         await emit("session.status_idle", {"stop_reason": "end_turn"})
 
 
@@ -59,6 +62,7 @@ class RaisingLauncher:
         workspace: Path,
         emit: Callable[[str, dict | None], Coroutine[Any, Any, None]],
         model: str | None = None,
+        effort: str | None = None,
     ) -> None:
         raise self._exc
 
@@ -82,9 +86,16 @@ class ScriptedLauncher:
         workspace: Path,
         emit: Callable[[str, dict | None], Coroutine[Any, Any, None]],
         model: str | None = None,
+        effort: str | None = None,
     ) -> None:
         self.calls.append(
-            {"session_id": session_id, "prompt": prompt, "workspace": workspace, "model": model}
+            {
+                "session_id": session_id,
+                "prompt": prompt,
+                "workspace": workspace,
+                "model": model,
+                "effort": effort,
+            }
         )
         if self._queue:
             events = self._queue.popleft()

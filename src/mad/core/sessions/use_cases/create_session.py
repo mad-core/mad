@@ -38,6 +38,7 @@ class CreateSessionInput:
     base_branch: str | None = None
     working_directory: str | None = None
     model: str | None = None
+    effort: str | None = None
 
 
 @dataclass
@@ -94,6 +95,7 @@ class CreateSessionUseCase:
                 "provider": payload.agent.get("provider", ""),
                 "working_directory": str(working_directory),
                 "model": payload.model,
+                "effort": payload.effort,
             },
         )
 
@@ -151,6 +153,7 @@ class CreateSessionUseCase:
             status="created",
             base_branch=payload.base_branch,
             model=payload.model,
+            effort=payload.effort,
             resources_mounted=resources_mounted,
             response=response,
             tokens_to_redact=tokens_to_redact,
