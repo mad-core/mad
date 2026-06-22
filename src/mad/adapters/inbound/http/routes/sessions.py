@@ -95,6 +95,16 @@ class CreateSessionRequest(BaseModel):
             "default."
         ),
     )
+    timeout_s: float | None = Field(
+        default=None,
+        gt=0,
+        description=(
+            "Optional per-session launcher timeout in seconds; overrides the operator "
+            "default for this session. Resolution order: this value > the "
+            "``MAD_AGENT_TIMEOUT_S`` env var > 600 s. ``null`` (default) inherits the "
+            "operator default. Must be greater than 0."
+        ),
+    )
 
 
 class SendMessageRequest(BaseModel):
@@ -219,6 +229,7 @@ async def create_session(
             working_directory=payload.working_directory,
             model=payload.model,
             effort=payload.effort,
+            timeout_s=payload.timeout_s,
         )
     )
 

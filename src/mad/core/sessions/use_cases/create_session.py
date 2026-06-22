@@ -39,6 +39,7 @@ class CreateSessionInput:
     working_directory: str | None = None
     model: str | None = None
     effort: str | None = None
+    timeout_s: float | None = None
 
 
 @dataclass
@@ -96,6 +97,7 @@ class CreateSessionUseCase:
                 "working_directory": str(working_directory),
                 "model": payload.model,
                 "effort": payload.effort,
+                "timeout_s": payload.timeout_s,
             },
         )
 
@@ -154,6 +156,7 @@ class CreateSessionUseCase:
             base_branch=payload.base_branch,
             model=payload.model,
             effort=payload.effort,
+            timeout_s=payload.timeout_s,
             resources_mounted=resources_mounted,
             response=response,
             tokens_to_redact=tokens_to_redact,

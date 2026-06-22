@@ -149,6 +149,50 @@ async def test_queued_task_dispatches_runs_and_completes(tmp_path: Path) -> None
         await h.stop()
 
 
+async def test_dispatch_threads_per_session_timeout_to_launcher(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The dispatcher resolves a session's timeout_s override and threads it
+    into the launcher run (issue #61) — the shared _run_launcher path."""
+    monkeypatch.delenv("MAD_AGENT_TIMEOUT_S", raising=False)
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    session = _session("sesn_a", workspace)
+    session.timeout_s = 17.0
+    sessions = {"sesn_a": session}
+    launcher = ScriptedLauncher()
+    _scripted_two_runs(launcher)
+    h = _Harness(sessions, launcher)
+    await h.start()
+    try:
+        await h.enqueue.execute(EnqueueTaskInput(session_id="sesn_a", content="hello"))
+        await _wait_for_event_type(h.store, session_id="sesn_a", event_type="task.completed")
+        assert launcher.calls[0]["timeout_s"] == 17.0
+    finally:
+        await h.stop()
+
+
+async def test_dispatch_uses_default_timeout_when_session_has_no_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Negative twin: a session without timeout_s and no env var dispatches
+    with the 600 s default."""
+    monkeypatch.delenv("MAD_AGENT_TIMEOUT_S", raising=False)
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    sessions = {"sesn_a": _session("sesn_a", workspace)}
+    launcher = ScriptedLauncher()
+    _scripted_two_runs(launcher)
+    h = _Harness(sessions, launcher)
+    await h.start()
+    try:
+        await h.enqueue.execute(EnqueueTaskInput(session_id="sesn_a", content="hello"))
+        await _wait_for_event_type(h.store, session_id="sesn_a", event_type="task.completed")
+        assert launcher.calls[0]["timeout_s"] == 600.0
+    finally:
+        await h.stop()
+
+
 async def test_two_queued_tasks_run_sequentially_not_in_parallel(
     tmp_path: Path,
 ) -> None:

@@ -16,8 +16,9 @@ Early days — `0.x`. Single launcher provider (`claude_cli`); HTTP + SSE surfac
 
 - Linux host (see `Operating System :: POSIX :: Linux` classifier)
 - Python ≥ 3.11
-- The `claude` CLI installed and on `PATH` (override the binary with `MAD_CLAUDE_CLI_BIN`; per-run timeout via `MAD_CLAUDE_CLI_TIMEOUT_S`)
-- Optionally: the `opencode` CLI for the `opencode` provider (override the binary with `MAD_OPENCODE_BIN`; per-run timeout via `MAD_OPENCODE_TIMEOUT_S`, default 600 s)
+- The `claude` CLI installed and on `PATH` (override the binary with `MAD_CLAUDE_CLI_BIN`)
+- Optionally: the `opencode` CLI for the `opencode` provider (override the binary with `MAD_OPENCODE_BIN`)
+- Launcher timeout is agent-agnostic: set `MAD_AGENT_TIMEOUT_S` (default 600 s) for the operator-wide default, or pass `timeout_s` on `POST /v1/sessions` to override it per session (resolution: per-session `timeout_s` > `MAD_AGENT_TIMEOUT_S` > 600 s)
 - A GitHub token with `repo` scope for cloning private repos (passed per-request, never persisted — see hard rule 2)
 - Session workspaces are created under `~/mad` by default. Override the base directory with `MAD_WORKSPACE_DIR` (used verbatim — no `~`/`$VAR` expansion) when you need a larger or persistent disk; resolution is `MAD_WORKSPACE_DIR` → `~/mad` → the system temp dir (last resort, only if the home directory cannot be resolved). The base is created on first use.
 - Session JSONL logs (the source of truth, hard rule 6) are written under `./sessions` by default. Override the directory with `MAD_SESSIONS_DIR` (used verbatim — no `~`/`$VAR` expansion) when you need a persistent or shared disk; an unset or blank value falls back to `./sessions`. The directory is created on first write.

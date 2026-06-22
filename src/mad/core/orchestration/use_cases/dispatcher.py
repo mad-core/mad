@@ -66,6 +66,10 @@ from mad.core.orchestration.domain.model_config import (
 from mad.core.orchestration.domain.ordering import order_ready_candidates
 from mad.core.orchestration.domain.retry_schedule import backoff_s, exceeds_ceiling
 from mad.core.orchestration.domain.task import Task
+from mad.core.orchestration.domain.timeout_config import (
+    env_timeout_s,
+    resolve_effective_timeout,
+)
 from mad.core.orchestration.ports.clock import Clock
 from mad.core.orchestration.ports.task_projection import TaskProjection
 from mad.core.sessions.domain.entities.session import Session
@@ -323,6 +327,12 @@ class Dispatcher:
                 else None
             ),
         )
+        # Timeout precedence is session > env > 600 s default (issue #61);
+        # there is no task-level or deployment-config level, unlike model.
+        effective_timeout = resolve_effective_timeout(
+            session_timeout_s=session.timeout_s,
+            env_timeout_s=env_timeout_s(),
+        )
 
         attempt = 0
         cumulative_wait_s = 0.0
@@ -342,6 +352,7 @@ class Dispatcher:
                         propagate_failures=True,
                         model=effective_model,
                         effort=effective_effort,
+                        timeout_s=effective_timeout,
                         conversation_mode=current_conversation_mode,
                     )
                 except RateLimitError as rl_exc:

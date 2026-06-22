@@ -28,6 +28,10 @@ from mad.core.orchestration.domain.model_config import (
     DeploymentModelConfig,
     resolve_effective_model,
 )
+from mad.core.orchestration.domain.timeout_config import (
+    env_timeout_s,
+    resolve_effective_timeout,
+)
 from mad.core.orchestration.ports.task_queue import TaskQueue
 from mad.core.sessions.domain.entities.session import Session
 from mad.core.sessions.domain.exceptions.base import SessionNotFound
@@ -92,6 +96,10 @@ class SendUserMessageUseCase:
                 else None
             ),
         )
+        effective_timeout = resolve_effective_timeout(
+            session_timeout_s=session.timeout_s,
+            env_timeout_s=env_timeout_s(),
+        )
         # Fire-and-forget: emitter handles both persistence and publish.
         asyncio.create_task(
             self._emitter.emit(
@@ -107,6 +115,7 @@ class SendUserMessageUseCase:
                 emitter=self._emitter,
                 model=effective_model,
                 effort=effective_effort,
+                timeout_s=effective_timeout,
             )
         )
 
@@ -120,6 +129,7 @@ async def _run_launcher(
     propagate_failures: bool = False,
     model: str | None = None,
     effort: str | None = None,
+    timeout_s: float | None = None,
     conversation_mode: str = "new",
 ) -> None:
     """Internal coroutine: run the launcher and handle lifecycle events.
@@ -137,6 +147,11 @@ async def _run_launcher(
     ``effort`` is the resolved effective reasoning effort (issue #60),
     forwarded to the launcher as ``--effort`` (claude) / ``--variant``
     (opencode). ``None`` means omit the flag and use the provider's default.
+
+    ``timeout_s`` is the resolved wall-clock budget (issue #61): per-session
+    override > ``MAD_AGENT_TIMEOUT_S`` env > 600 s. Forwarded to BOTH the
+    primary run and the post-run auto-sync run so a session's timeout applies
+    uniformly. ``None`` lets the provider apply its own 600 s fallback.
 
     ``conversation_mode`` controls whether to start a fresh conversation
     (``"new"``, default) or continue a previous one (``"resume"``).
@@ -187,6 +202,7 @@ async def _run_launcher(
             model=model,
             effort=effort,
             conversation_id=resume_id,
+            timeout_s=timeout_s,
         )
         if captured_id is not None:
             session.last_conversation_id = captured_id
@@ -234,6 +250,7 @@ async def _run_launcher(
             emit=emit,
             model=model,
             effort=effort,
+            timeout_s=timeout_s,
         )
     except Exception as exc:
         await emitter.emit(

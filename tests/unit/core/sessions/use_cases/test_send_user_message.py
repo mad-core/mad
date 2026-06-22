@@ -59,7 +59,7 @@ async def test_send_message_runs_launcher_and_redacts_tokens():
 
     class ScriptedLauncher:
         async def run(
-            self, session_id, prompt, workspace, emit, model=None, effort=None, conversation_id=None
+            self, session_id, prompt, workspace, emit, model=None, effort=None, conversation_id=None, timeout_s=None
         ):
             await emit("agent.output", {"line": f"leak {token} bye"})
             await emit("session.status_idle", {"stop_reason": "end_turn"})
@@ -133,7 +133,7 @@ async def test_post_run_auto_sync_runs_even_when_primary_fails():
 
     class FlakyLauncher:
         async def run(
-            self, session_id, prompt, workspace, emit, model=None, effort=None, conversation_id=None
+            self, session_id, prompt, workspace, emit, model=None, effort=None, conversation_id=None, timeout_s=None
         ):
             calls.append(prompt)
             if len(calls) == 1:
@@ -161,7 +161,7 @@ async def test_post_run_auto_sync_failure_emits_session_error():
 
     class AutoSyncBoom:
         async def run(
-            self, session_id, prompt, workspace, emit, model=None, effort=None, conversation_id=None
+            self, session_id, prompt, workspace, emit, model=None, effort=None, conversation_id=None, timeout_s=None
         ):
             calls.append(1)
             if len(calls) == 1:
@@ -191,7 +191,7 @@ async def test_send_message_records_session_error_when_launcher_raises():
 
     class BoomLauncher:
         async def run(
-            self, session_id, prompt, workspace, emit, model=None, effort=None, conversation_id=None
+            self, session_id, prompt, workspace, emit, model=None, effort=None, conversation_id=None, timeout_s=None
         ):
             raise RuntimeError("kaboom")
 
@@ -221,7 +221,7 @@ async def test_publishes_every_appended_event_to_the_event_bus():
 
     class ScriptedLauncher:
         async def run(
-            self, session_id, prompt, workspace, emit, model=None, effort=None, conversation_id=None
+            self, session_id, prompt, workspace, emit, model=None, effort=None, conversation_id=None, timeout_s=None
         ):
             await emit("agent.output", {"line": "hi"})
             await emit("session.status_idle", {"stop_reason": "end_turn"})

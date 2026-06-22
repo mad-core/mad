@@ -178,19 +178,30 @@ async def test_claude_cli_ac4_timeout_kills_subprocess_and_emits_error(
         """,
     )
     monkeypatch.setenv("MAD_CLAUDE_CLI_BIN", str(fake_bin))
-    monkeypatch.setenv("MAD_CLAUDE_CLI_TIMEOUT_S", "1")
 
     launcher = ClaudeCLIProvider()
+    collected: list[dict] = []
 
+    async def capture(event_type: str, event: dict) -> None:
+        collected.append(event)
+
+    # The resolved per-run timeout is passed in by the use case as ``timeout_s``;
+    # the launcher no longer reads any timeout env var directly (issue #61).
     start = time.monotonic()
-    events = await _collect_emit(launcher, prompt="test", workspace=tmp_path)
+    await launcher.run(
+        session_id="test-session-id",
+        prompt="test",
+        workspace=tmp_path,
+        emit=capture,
+        timeout_s=1,
+    )
     elapsed = time.monotonic() - start
 
     assert elapsed < 4.0, f"Timeout should fire within ~2s of the 1s limit; took {elapsed:.2f}s"
 
-    error_events = [e for e in events if e.get("type") == "session.error"]
+    error_events = [e for e in collected if e.get("type") == "session.error"]
     assert len(error_events) >= 1, (
-        f"Expected session.error after timeout, got: {[e.get('type') for e in events]}"
+        f"Expected session.error after timeout, got: {[e.get('type') for e in collected]}"
     )
     # The run() coroutine completing cleanly (no hang) is the primary zombie guard.
     # The elapsed check above also ensures the child process was killed promptly.

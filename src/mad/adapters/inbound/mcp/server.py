@@ -244,6 +244,7 @@ def build_mcp_server(
                 working_directory=payload.working_directory,
                 model=payload.model,
                 effort=payload.effort,
+                timeout_s=payload.timeout_s,
             )
         )
         return output.session.response

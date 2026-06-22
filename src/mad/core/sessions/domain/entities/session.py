@@ -42,6 +42,9 @@ class Session:
     base_branch: str | None = None
     model: str | None = None
     effort: str | None = None
+    # Per-session launcher timeout override (issue #61). None means inherit the
+    # operator default (MAD_AGENT_TIMEOUT_S env > 600 s) at resolution time.
+    timeout_s: float | None = None
     resources_mounted: list[dict[str, Any]] = field(default_factory=list)
     response: dict[str, Any] = field(default_factory=dict)
     tokens_to_redact: list[str] = field(default_factory=list, repr=False)
@@ -109,6 +112,7 @@ class Session:
             "base_branch": self.base_branch,
             "model": self.model,
             "effort": self.effort,
+            "timeout_s": self.timeout_s,
             "resources_mounted": self.resources_mounted,
             "response": self.response,
             "priority": self.priority,
@@ -131,6 +135,7 @@ class Session:
             base_branch=d.get("base_branch"),
             model=d.get("model"),
             effort=d.get("effort"),
+            timeout_s=d.get("timeout_s"),
             resources_mounted=d.get("resources_mounted", []),
             response=d.get("response", {}),
             priority=d.get("priority", DEFAULT_PRIORITY),

@@ -31,12 +31,19 @@ class AgentLauncher(Protocol):
         model: str | None = None,
         effort: str | None = None,
         conversation_id: str | None = None,
+        timeout_s: float | None = None,
     ) -> str | None:
         """Launch the external agent and stream events via ``emit``.
 
         ``model`` is an optional model identifier forwarded to the underlying
         CLI (e.g. ``--model`` for claude).  ``None`` means omit the flag and
         let the provider's machine-configured default apply.
+
+        ``timeout_s`` is the resolved wall-clock budget for the run (issue
+        #61).  The use case resolves it (per-session override >
+        ``MAD_AGENT_TIMEOUT_S`` env > 600 s) and passes the concrete value
+        here; ``None`` means the provider applies its own 600 s fallback.
+        Providers MUST NOT re-read any timeout env var at call time.
 
         ``effort`` is an optional reasoning-effort identifier forwarded to the
         underlying CLI (``--effort`` for claude, ``--variant`` for opencode,

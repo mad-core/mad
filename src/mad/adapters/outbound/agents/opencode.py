@@ -16,6 +16,7 @@ from mad.adapters.outbound.agents._subprocess import (
 )
 from mad.adapters.outbound.agents.hook_socket import resolve_hook_socket_path
 from mad.core.orchestration.domain.exceptions.rate_limit import RateLimitError
+from mad.core.orchestration.domain.timeout_config import DEFAULT_AGENT_TIMEOUT_S
 
 # OpenCode does not expose structured retry events; fall back to stderr
 # pattern matching to detect rate-limit exits.
@@ -43,6 +44,7 @@ class OpenCodeProvider:
         model: str | None = None,
         effort: str | None = None,
         conversation_id: str | None = None,
+        timeout_s: float | None = None,
     ) -> str | None:
         executable = os.environ.get("MAD_OPENCODE_BIN") or shutil.which("opencode")
         if not executable:
@@ -52,7 +54,10 @@ class OpenCodeProvider:
             )
             return None
 
-        timeout = float(os.environ.get("MAD_OPENCODE_TIMEOUT_S", "600"))
+        # The use case resolves the effective timeout (per-session override >
+        # MAD_AGENT_TIMEOUT_S env > 600 s) and passes it as ``timeout_s``; the
+        # launcher no longer reads any timeout env var directly (issue #61).
+        timeout = timeout_s if timeout_s is not None else DEFAULT_AGENT_TIMEOUT_S
 
         env = _subprocess_env()
         env["MAD_SESSION_ID"] = session_id

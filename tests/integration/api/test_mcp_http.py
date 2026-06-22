@@ -24,7 +24,9 @@ GitHub (hard rule 5). Fakes live in ``tests/support`` (rule 3).
 
 from __future__ import annotations
 
+import asyncio
 import json
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
@@ -148,6 +150,62 @@ async def test_create_session_rejects_relative_mount_path(client: TestClient) ->
         )
     assert result.isError is True
     assert "must be absolute" in result.content[0].text  # type: ignore[union-attr]
+
+
+async def test_create_session_tool_threads_per_session_timeout(
+    client: TestClient, fake_launcher: ScriptedLauncher
+) -> None:
+    """The mad_create_session tool mirrors timeout_s end-to-end (hard rule 13):
+    a per-session timeout_s reaches the launcher when work is later dispatched."""
+    fake_launcher.script(
+        [
+            [{"type": "session.status_idle", "stop_reason": "end_turn"}],
+            [{"type": "session.status_idle", "stop_reason": "end_turn"}],
+        ]
+    )
+    async with _mcp_session(client) as s:
+        result = await s.call_tool(
+            "mad_create_session",
+            {
+                "payload": {
+                    "agent": _AGENT,
+                    "resources": [_FILE_RESOURCE],
+                    "timeout_s": 33.0,
+                }
+            },
+        )
+        session_id = _dict_result(result)["session_id"]
+        await s.call_tool(
+            "mad_send_message",
+            {"session_id": session_id, "payload": {"content": "go"}},
+        )
+    deadline = time.monotonic() + 5.0
+    while len(fake_launcher.calls) < 1 and time.monotonic() < deadline:
+        await asyncio.sleep(0.05)
+    assert fake_launcher.calls[0]["timeout_s"] == 33.0
+
+
+async def test_create_session_tool_omits_timeout_falls_back_to_default(
+    client: TestClient, fake_launcher: ScriptedLauncher, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Negative twin: no timeout_s on the tool payload and no env → 600 s default."""
+    monkeypatch.delenv("MAD_AGENT_TIMEOUT_S", raising=False)
+    fake_launcher.script(
+        [
+            [{"type": "session.status_idle", "stop_reason": "end_turn"}],
+            [{"type": "session.status_idle", "stop_reason": "end_turn"}],
+        ]
+    )
+    async with _mcp_session(client) as s:
+        session_id = await _make_session(s)
+        await s.call_tool(
+            "mad_send_message",
+            {"session_id": session_id, "payload": {"content": "go"}},
+        )
+    deadline = time.monotonic() + 5.0
+    while len(fake_launcher.calls) < 1 and time.monotonic() < deadline:
+        await asyncio.sleep(0.05)
+    assert fake_launcher.calls[0]["timeout_s"] == 600.0
 
 
 # --- tool: mad_send_message --------------------------------------------------

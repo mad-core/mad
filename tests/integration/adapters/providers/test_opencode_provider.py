@@ -44,6 +44,7 @@ async def _collect_emit(
     workspace: Path,
     session_id: str = "test-session-id",
     model: str | None = None,
+    timeout_s: float | None = None,
 ) -> list[dict]:
     """Run the launcher and collect all emitted events into a list."""
     collected: list[dict] = []
@@ -52,7 +53,12 @@ async def _collect_emit(
         collected.append(event)
 
     await launcher.run(
-        session_id=session_id, prompt=prompt, workspace=workspace, emit=capture, model=model
+        session_id=session_id,
+        prompt=prompt,
+        workspace=workspace,
+        emit=capture,
+        model=model,
+        timeout_s=timeout_s,
     )
     return collected
 
@@ -242,12 +248,13 @@ async def test_opencode_ac4_timeout_kills_subprocess_and_emits_error(
         """,
     )
     monkeypatch.setenv("MAD_OPENCODE_BIN", str(fake_bin))
-    monkeypatch.setenv("MAD_OPENCODE_TIMEOUT_S", "0.5")
 
     launcher = OpenCodeProvider()
 
+    # The resolved per-run timeout is passed in by the use case as ``timeout_s``;
+    # the launcher no longer reads any timeout env var directly (issue #61).
     start = time.monotonic()
-    events = await _collect_emit(launcher, prompt="test", workspace=tmp_path)
+    events = await _collect_emit(launcher, prompt="test", workspace=tmp_path, timeout_s=0.5)
     elapsed = time.monotonic() - start
 
     assert elapsed < 4.0, f"Timeout should fire within ~2s of the 0.5s limit; took {elapsed:.2f}s"
@@ -275,10 +282,9 @@ async def test_opencode_ac4_fast_binary_under_timeout_emits_idle(
         """,
     )
     monkeypatch.setenv("MAD_OPENCODE_BIN", str(fake_bin))
-    monkeypatch.setenv("MAD_OPENCODE_TIMEOUT_S", "0.5")
 
     launcher = OpenCodeProvider()
-    events = await _collect_emit(launcher, prompt="test", workspace=tmp_path)
+    events = await _collect_emit(launcher, prompt="test", workspace=tmp_path, timeout_s=0.5)
 
     idle_events = [e for e in events if e.get("type") == "session.status_idle"]
     error_events = [e for e in events if e.get("type") == "session.error"]

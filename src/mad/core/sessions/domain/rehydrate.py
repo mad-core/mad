@@ -36,6 +36,7 @@ def rehydrate_from_events(session_id: str, events: list[dict[str, Any]]) -> Sess
     working_directory = ""
     model: str | None = None
     effort: str | None = None
+    timeout_s: float | None = None
     status = "created"
     created_at: datetime | None = None
     latest_at: datetime | None = None
@@ -52,6 +53,7 @@ def rehydrate_from_events(session_id: str, events: list[dict[str, Any]]) -> Sess
             working_directory = event.get("working_directory", "")
             model = event.get("model")
             effort = event.get("effort")
+            timeout_s = event.get("timeout_s")
         elif etype == "session.status_running":
             status = "running"
         elif etype == "session.status_idle":
@@ -103,6 +105,7 @@ def rehydrate_from_events(session_id: str, events: list[dict[str, Any]]) -> Sess
         working_directory=working_directory,
         model=model,
         effort=effort,
+        timeout_s=timeout_s,
         status=status,
         dispatch_policy=dispatch_policy,
         priority=priority,

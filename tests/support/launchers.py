@@ -32,6 +32,7 @@ class RecordingLauncher:
         self.models: list[str | None] = []
         self.efforts: list[str | None] = []
         self.conversation_ids: list[str | None] = []
+        self.timeouts: list[float | None] = []
 
     async def run(
         self,
@@ -42,12 +43,14 @@ class RecordingLauncher:
         model: str | None = None,
         effort: str | None = None,
         conversation_id: str | None = None,
+        timeout_s: float | None = None,
     ) -> str | None:
         self.session_ids.append(session_id)
         self.calls.append(prompt)
         self.models.append(model)
         self.efforts.append(effort)
         self.conversation_ids.append(conversation_id)
+        self.timeouts.append(timeout_s)
         await emit("session.status_idle", {"stop_reason": "end_turn"})
         return None
 
@@ -72,6 +75,7 @@ class RaisingLauncher:
         model: str | None = None,
         effort: str | None = None,
         conversation_id: str | None = None,
+        timeout_s: float | None = None,
     ) -> str | None:
         raise self._exc
 
@@ -142,6 +146,7 @@ class ScriptedLauncher:
         model: str | None = None,
         effort: str | None = None,
         conversation_id: str | None = None,
+        timeout_s: float | None = None,
     ) -> str | None:
         self.calls.append(
             {
@@ -151,6 +156,7 @@ class ScriptedLauncher:
                 "model": model,
                 "effort": effort,
                 "conversation_id": conversation_id,
+                "timeout_s": timeout_s,
             }
         )
         # Check for a scripted exception before emitting any events.
