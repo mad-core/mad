@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.5.18 (2026-06-22)
+
+### Bug Fixes
+
+- **agents**: Retry transient 401 authentication_failed instead of draining queue
+  ([`0d9c956`](https://github.com/jlsaco/mad/commit/0d9c956fedb3fe7c7cb5f0986f5795a2c5bc27e6))
+
+### Features
+
+- **config**: Add MAD_SESSIONS_RETENTION_DAYS JSONL log TTL
+  ([`d5d9296`](https://github.com/jlsaco/mad/commit/d5d92965a8d84f2fed5de4c814b52085753fbeb8))
+
+
 ## v0.5.17 (2026-06-22)
 
 ### Features
