@@ -19,13 +19,14 @@ push to main
             │ outputs.released == true
             ▼
 ┌───────────────────────────┐
-│ publish-testpypi          │  pypa/gh-action-pypi-publish → test.pypi.org
-└───────────┬───────────────┘
-            ▼
-┌───────────────────────────┐
 │ publish-pypi              │  pypa/gh-action-pypi-publish → pypi.org
 └───────────────────────────┘
 ```
+
+> TestPyPI is **not** published from `release.yml` — that job is intentionally
+> disabled. Per-PR TestPyPI previews run separately in
+> [`testpypi-preview.yml`](../.github/workflows/testpypi-preview.yml); see
+> [docs/testpypi-preview.md](testpypi-preview.md).
 
 The `release` job is a no-op when the commits since the last tag do not require
 a version bump, exactly like `changesets/action` is a no-op without pending
@@ -69,13 +70,14 @@ Register the publisher **before** the first release. PyPI lets you create a
 
 | Field              | Value         |
 | ------------------ | ------------- |
-| PyPI project name  | `mad-bros`    |
-| Owner              | `jlsaco`      |
-| Repository name    | `mad`         |
-| Workflow filename  | `release.yml` |
-| Environment name   | `testpypi`    |
+| PyPI project name  | `mad-bros`             |
+| Owner              | `mad-core`             |
+| Repository name    | `mad`                  |
+| Workflow filename  | `testpypi-preview.yml` |
+| Environment name   | `testpypi`             |
 
-**PyPI** — https://pypi.org/manage/account/publishing/ with environment `pypi`.
+**PyPI** — same fields but with **workflow filename** `release.yml` and
+**environment** `pypi`, at https://pypi.org/manage/account/publishing/.
 
 ### 3. GitHub Actions permissions
 

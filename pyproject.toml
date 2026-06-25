@@ -51,8 +51,8 @@ dev = [
 mad = "mad.entry_points.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/jlsaco/mad"
-Issues = "https://github.com/jlsaco/mad/issues"
+Homepage = "https://github.com/mad-core/mad"
+Issues = "https://github.com/mad-core/mad/issues"
 
 
 
