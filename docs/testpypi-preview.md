@@ -52,7 +52,7 @@ stay dormant.
 1. Create an account on <https://test.pypi.org>.
 2. Register a **Trusted Publisher** (a "pending publisher") for project
    `mad-bros` at <https://test.pypi.org/manage/account/publishing/>:
-   - **Owner:** `jlsaco`  **Repository:** `mad`
+   - **Owner:** `mad-core`  **Repository:** `mad`
    - **Workflow name:** `testpypi-preview.yml`
    - **Environment name:** `testpypi`
 3. Create a GitHub Environment named `testpypi`

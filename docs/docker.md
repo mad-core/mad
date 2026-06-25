@@ -86,7 +86,7 @@ make docker-up       # docker compose -f compose.example.yml up -d
 This is what makes multiple instances safe to run on one host.
 
 Mad resolves its workspace base directory from **`MAD_WORKSPACE_DIR`** (see
-[#64](https://github.com/jlsaco/mad/issues/64)). In the container that variable
+[#64](https://github.com/mad-core/mad/issues/64)). In the container that variable
 is **pinned to the constant path `/workspaces`** (set in the compose
 `environment:` block, which overrides any value in `.env`). Inside `/workspaces`
 Mad creates one `mad_<session_id>` subdirectory per session.
