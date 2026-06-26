@@ -21,5 +21,16 @@
       "Bash(mkdir:*)",
       "Bash(ls:*)"
     ]
+  },
+  "extraKnownMarketplaces": {
+    "mad-core": {
+      "source": {
+        "source": "github",
+        "repo": "mad-core/engineering-playbooks"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "living-docs@mad-core": true
   }
 }

@@ -1,0 +1,20 @@
+name: Docs validate
+
+# Thin caller for the shared reusable workflow in mad-core/.github.
+# The trigger lives here; the docs quality-gate logic lives in the reusable.
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  docs-validate:
+    uses: mad-core/.github/.github/workflows/docs-validate.reusable.yml@main
+    with:
+      service_slug: mad
+    secrets:
+      DOCS_SYNC_TOKEN: ${{ secrets.DOCS_SYNC_TOKEN }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

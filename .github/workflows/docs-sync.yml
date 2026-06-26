@@ -1,0 +1,21 @@
+name: Docs sync → mad-docs /raw
+
+# Thin caller for the shared reusable workflow in mad-core/.github.
+# After merge to main, mirrors this repo's /docs tree verbatim into
+# mad-core/mad-docs under raw/<service_slug>/ via a correlated PR.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  docs-sync:
+    uses: mad-core/.github/.github/workflows/docs-sync.reusable.yml@main
+    with:
+      service_slug: mad
+    secrets:
+      DOCS_SYNC_TOKEN: ${{ secrets.DOCS_SYNC_TOKEN }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
