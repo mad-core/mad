@@ -45,7 +45,6 @@ def test_launcher_output_lines_emitted_as_agent_output(
                 "type": "github_repository",
                 "url": f"file://{bare_repo}",
                 "mount_path": "/workspace/repo",
-                "authorization_token": "ghp_x",
             }
         ],
     }

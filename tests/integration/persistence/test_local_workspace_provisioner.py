@@ -11,7 +11,9 @@ from pathlib import Path
 import pytest
 
 from mad.adapters.outbound.persistence.local_workspace_provisioner import (
+    GitCloneError,
     LocalWorkspaceProvisioner,
+    _scrub_token,
 )
 
 
@@ -120,6 +122,38 @@ def test_materialize_unknown_base_branch_raises_value_error(tmp_path: Path) -> N
             token=None,
             base_branch="does-not-exist",
         )
+
+
+def test_materialize_raises_actionable_error_when_clone_fails(tmp_path: Path) -> None:
+    """Negative twin (#89): a clone that fails (no credential / unreachable source)
+    raises GitCloneError with an actionable GITHUB_TOKEN hint — never a silent
+    success or a bare CalledProcessError. Uses a nonexistent local source so no
+    network or real GitHub is touched (hard rule 5)."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    missing = tmp_path / "does-not-exist.git"
+
+    with pytest.raises(GitCloneError, match="GITHUB_TOKEN"):
+        LocalWorkspaceProvisioner().materialize_github_repo(
+            workspace=workspace,
+            mount_path="/workspace/repo",
+            repo_url=f"file://{missing}",
+            token=None,
+        )
+
+
+def test_scrub_token_removes_token_literal() -> None:
+    """Hard rule 2: a token echoed in git stderr is scrubbed before it can reach
+    the raised error message or any log."""
+    leaked = "fatal: could not read from https://ghp_secret@github.com/x/y.git"
+    assert _scrub_token(leaked, "ghp_secret") == (
+        "fatal: could not read from https://[REDACTED]@github.com/x/y.git"
+    )
+
+
+def test_scrub_token_is_noop_without_token() -> None:
+    """Negative twin: anonymous clone failures (token=None) pass stderr through."""
+    assert _scrub_token("fatal: repository not found", None) == "fatal: repository not found"
 
 
 def test_materialize_without_base_branch_keeps_remote_default(tmp_path: Path) -> None:

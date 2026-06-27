@@ -20,6 +20,26 @@ class MalformedSettingsLocalJson(ValueError):
     """
 
 
+class GitCloneError(RuntimeError):
+    """Raised when ``git clone`` fails — e.g. a private repo with no credential.
+
+    Carries an actionable message (never the tokenized clone URL) so the
+    operator knows to configure ``GITHUB_TOKEN`` (issue #89). Surfaces as a
+    502 via a dedicated handler rather than a silent anonymous clone that 404s.
+    """
+
+
+def _scrub_token(text: str, token: str | None) -> str:
+    """Replace any occurrence of ``token`` in ``text`` with ``[REDACTED]``.
+
+    Defends hard rule 2: git error output can echo the tokenized remote URL,
+    so the credential must never reach the raised error message or any log.
+    """
+    if token:
+        return text.replace(token, "[REDACTED]")
+    return text
+
+
 def _workspace_base() -> Path:
     """Resolve the base directory under which session workspaces are created.
 
@@ -89,7 +109,18 @@ class LocalWorkspaceProvisioner:
 
         cmd = ["git", "clone", "-q", clone_url, str(local_path)]
         shutil.rmtree(local_path)
-        subprocess.run(cmd, check=True, capture_output=True)
+        # Disable interactive credential prompts so a private-repo clone with no
+        # credential fails fast with an actionable error instead of hanging on a
+        # username/password prompt (issue #89).
+        clone_env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+        result = subprocess.run(cmd, capture_output=True, env=clone_env)
+        if result.returncode != 0:
+            stderr = _scrub_token(result.stderr.decode("utf-8", "replace").strip(), token)
+            raise GitCloneError(
+                f"git clone failed for {repo_url!r} (exit {result.returncode}): {stderr}. "
+                "For private repositories, configure a GitHub credential via the "
+                "GITHUB_TOKEN (or GH_TOKEN) host environment variable."
+            )
 
         # Strip token from remote after clone (CLAUDE.md hard rule 2)
         subprocess.run(

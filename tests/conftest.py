@@ -16,6 +16,20 @@ from support.launchers import ScriptedLauncher
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture(autouse=True)
+def _isolate_clone_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Clear host GitHub clone-credential env vars for every test (#89).
+
+    The dev/CI host may export ``GITHUB_TOKEN`` / ``GH_TOKEN``; without this the
+    use case would resolve the real host PAT for every clone, populate
+    ``tokens_to_redact`` with it, and make assertions depend on ambient secrets
+    (hard rule 5). Tests that exercise env-sourced credentials opt in by setting
+    the var explicitly via ``monkeypatch.setenv``.
+    """
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+
+
 @pytest.fixture
 def fake_launcher() -> ScriptedLauncher:
     """Return a ScriptedLauncher; injected into create_app via launcher_factory."""
@@ -79,7 +93,9 @@ def _session_payload(bare_repo: Path) -> dict:
                 "type": "github_repository",
                 "url": f"file://{bare_repo}",
                 "mount_path": "/workspace/repo",
-                "authorization_token": "ghp_fake_token_xxx",
+                # No inline authorization_token: deprecated (#89) and unnecessary
+                # for a local file:// clone. Token-credential behavior is exercised
+                # explicitly in test_security.py / the credentials unit tests.
                 "checkout": {"type": "branch", "name": "main"},
             }
         ],
