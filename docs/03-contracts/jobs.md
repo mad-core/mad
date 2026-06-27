@@ -178,4 +178,5 @@ stream `GET /v1/events/stream`.
 | `task.retrying` | Before each rate-limit backoff sleep (carries `attempt`, `retry_after_s`, `reason`). |
 | `task.deferred` | A rate-limited task is returned to the queue because its work window closed (`reason: "work_window_closed"`, with `scheduled_for`). |
 | `task.queued_for_window` | A freshly queued task cannot dispatch now under a window policy; surfaces the next opening (`scheduled_for`) for the dashboard. |
+| `task.git_result` | After a task completes, if a `GitInspector` is wired (issue #88). Carries `base_sha`, `head_sha`, `head_branch`, `commits`, `dirty`, `pushed` — read-only observation of the workspace git state before and after the agent run. Emission is best-effort: a non-git repo, missing inspector, or git failure causes the event to be omitted silently (never fails the task). |
 | `session.status_idle` / `session.error` | Emitted by the launcher path per run (primary + auto-sync); auto-sync failures surface as `session.error`. |

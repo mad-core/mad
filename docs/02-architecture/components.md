@@ -90,23 +90,27 @@ events (hard rule 8, ADR-0004).
 ### orchestration — `src/mad/core/orchestration/`
 
 Turns queued tasks into launcher runs: queueing, cross-session ordering,
-dispatch policies, model/effort/timeout resolution, and rate-limit retry
-(ADR-0009).
+dispatch policies, model/effort/timeout resolution, rate-limit retry
+(ADR-0009), and sequential workflow execution (ADR-0013).
 
 | Module | Path | Responsibility / boundary |
 |---|---|---|
 | `Task` entity | `domain/task.py` | Frozen unit of work; `content` is opaque (never inspected, hard rule 1). State is not on the entity — it lives in the projection / event log. |
+| `Workflow` entity | `domain/workflow.py` | Validated DAG of `WorkflowStep`s, each with `depends_on` dependencies. Immutable after creation; structure lives in the event log. Steps may inherit predecessor repos via `from_step` (ref mode: sha or branch). |
+| `WorkflowStep` entity | `domain/workflow.py` | Single node in a workflow DAG: one session configuration plus an opaque task prompt. Carries mounts, dependencies, and session tuning (model/effort/timeout). |
+| `WorkflowMount` value object | `domain/workflow.py` | Resource mount inside a step's session: github repo (explicit URL or inherited `from_step`) or inline file content. |
+| `GitResult` value object | `domain/git_result.py` | Post-run git state snapshot: head SHA, branch, commits since baseline, dirty/pushed flags. Captured by the dispatcher for task attribution. |
 | Domain policies & configs | `domain/dispatch_policy.py`, `domain/deployment_policy.py`, `domain/model_config.py`, `domain/effort_config.py`, `domain/timeout_config.py`, `domain/retry_schedule.py`, `domain/ordering.py` | Pure policy logic: window/immediate/manual dispatch predicates, deployment-default resolution, model/effort/timeout precedence, exponential backoff, cross-session ordering. |
-| Domain exceptions | `domain/exceptions/base.py`, `domain/exceptions/rate_limit.py` | `TaskNotFound`, `TaskAlreadyDispatched`, `SessionHasInFlightTask`, `RateLimitError`. |
-| Ports | `ports/clock.py`, `ports/model_catalog.py`, `ports/task_queue.py`, `ports/task_projection.py` | Time source, model discovery, read-side queue, and writable projection (see Ports below). |
-| `Dispatcher` | `use_cases/dispatcher.py` | The lifespan-managed asyncio loop. Single in-flight task across all sessions (ADR-0009 Decision 4), orphan recovery on restart (Decision 5), policy gating, rate-limit retry with backoff, work-window deferral. |
-| Other use cases | `use_cases/` | `enqueue_task`, `cancel_task`, `list_tasks`, `get_global_queue`, `trigger_manual_dispatch`, `update_dispatch_policy`, `update_dispatch_priority`, `clear_dispatch_policy`, deployment policy/model/effort configs, `list_provider_models`, `rehydrate_pending_sessions`. |
+| Domain exceptions | `domain/exceptions/base.py`, `domain/exceptions/rate_limit.py`, `domain/exceptions/workflow.py` | `TaskNotFound`, `TaskAlreadyDispatched`, `SessionHasInFlightTask`, `RateLimitError`, `InvalidWorkflow`. |
+| Ports | `ports/clock.py`, `ports/model_catalog.py`, `ports/task_queue.py`, `ports/task_projection.py`, `ports/git_inspector.py`, `ports/workflow_read_model.py` | Time source, model discovery, read-side task queue, writable task projection, git workspace observer, and workflow status projection (see Ports below). |
+| `Dispatcher` | `use_cases/dispatcher.py` | The lifespan-managed asyncio loop. Single in-flight task across all sessions (ADR-0009 Decision 4), orphan recovery on restart (Decision 5), policy gating, rate-limit retry with backoff, work-window deferral, and task-to-step binding for workflows. |
+| Other use cases | `use_cases/` | `enqueue_task`, `cancel_task`, `list_tasks`, `get_global_queue`, `trigger_manual_dispatch`, `update_dispatch_policy`, `update_dispatch_priority`, `clear_dispatch_policy`, deployment policy/model/effort configs, `list_provider_models`, `rehydrate_pending_sessions`, `create_workflow`, `get_workflow`. |
 
 ## Inbound adapters (`src/mad/adapters/inbound/`)
 
 | Adapter | Path | Responsibility / boundary |
 |---|---|---|
-| `http` | `inbound/http/` | Public FastAPI app. `app.py::create_app(...)` wires dependencies, registers exception handlers (mapping domain exceptions to HTTP status), mounts routers, and mounts the MCP app at `/mcp`. `routes/` holds `sessions`, `events`, `orchestration`, `providers`. `dependencies.py` is the composition root. `asgi.py` exposes `app = create_app()` for tooling (e.g. the OpenAPI generator). Request/response bodies are typed Pydantic models (hard rule 9). |
+| `http` | `inbound/http/` | Public FastAPI app. `app.py::create_app(...)` wires dependencies, registers exception handlers (mapping domain exceptions to HTTP status), mounts routers, and mounts the MCP app at `/mcp`. `routes/` holds `sessions`, `events`, `orchestration`, `providers`, `workflows`. `dependencies.py` is the composition root. `asgi.py` exposes `app = create_app()` for tooling (e.g. the OpenAPI generator). Request/response bodies are typed Pydantic models (hard rule 9). |
 | `mcp` | `inbound/mcp/server.py` | `build_mcp_server(...)` returns a `FastMCP` exposing one tool per request/response HTTP route (hard rule 13, ADR-0010/0012). Each tool calls the same use case, with the same in-process dependencies, and returns the same Pydantic model — no logic beyond the route. Streaming SSE is the sole carve-out. |
 | `internal` | `inbound/internal/` | Internal FastAPI app for claude-cli hook ingestion (ADR-0008). `create_internal_app(event_emitter)` is UDS-bound and never exposes docs/openapi; `hooks_router.py` receives `forward.sh` payloads at `POST /_internal/hooks`, scrubs credential-shaped strings, and re-emits as `agent.<provider>.hook.*` through the shared `EventEmitter` so hook events appear on `GET /v1/events/stream`. |
 
@@ -118,7 +122,7 @@ dispatch policies, model/effort/timeout resolution, and rate-limit retry
 | `persistence` (workspace) | `outbound/persistence/local_workspace_provisioner.py` | `WorkspaceProvisioner` | Creates/destroys per-session workspaces, clones GitHub repos, strips tokens from the remote (hard rule 2), rejects traversal (hard rule 3), and materializes the hook `forward.sh` + `settings.local.json`. |
 | `agents` | `outbound/agents/` | `AgentLauncher` | `claude_cli.py` and `opencode.py` launchers spawn the external CLI with `cwd=workspace`, stream stdout as `agent.output`, emit `session.status_idle`/`session.error`, raise `RateLimitError`. `factory.py::get_launcher(name)` dispatches by name (the extension point). `_subprocess.py` shares env/scrub/stdout helpers; `hook_socket.py` resolves the UDS path; `hooks/` holds the canonical materialized assets; `model_catalog.py` implements `ModelCatalog`. |
 | `events` | `outbound/events/in_memory_event_bus.py`, `outbound/events/jsonl_event_log_query.py` | `EventBus`, `EventLogQuery` | `InMemoryEventBus` fans out to bounded per-subscriber queues, disconnecting slow subscribers (ADR-0004). `JsonlEventLogQuery` reads the same `sessions/*.jsonl` files, sorting by `event_id` for paginated/Last-Event-ID reads. |
-| `orchestration` | `outbound/orchestration/projection.py`, `outbound/orchestration/system_clock.py` | `TaskProjection`/`TaskQueue`, `Clock` | `InMemoryTaskProjection` materializes `task.*` events into per-session `{queued, in_flight}` state (`bootstrap_from_log` at startup, `apply` while the dispatcher tails the bus). `SystemClock` returns `datetime.now(UTC)`. |
+| `orchestration` | `outbound/orchestration/projection.py`, `outbound/orchestration/workflow_projection.py`, `outbound/orchestration/git_inspector.py`, `outbound/orchestration/system_clock.py` | `TaskProjection`/`TaskQueue`, `WorkflowReadModel`, `GitInspector`, `Clock` | `InMemoryTaskProjection` materializes `task.*` events into per-session `{queued, in_flight}` state (`bootstrap_from_log` at startup, `apply` while the dispatcher tails the bus). `InMemoryWorkflowProjection` materializes `workflow.*` and `task.*` events into per-step status (pending/running/completed/failed). `SubprocessGitInspector` shells out to read-only git plumbing (rev-parse, log, status) to capture post-run workspace state; degrades to `None` on errors so the task is never failed by git observation. `SystemClock` returns `datetime.now(UTC)`. |
 
 ## Ports between core and adapters
 
@@ -139,6 +143,8 @@ the log (hard rule 11).
 | `ModelCatalog` | `core/orchestration/ports/model_catalog.py` | `ModelCatalogAdapter` |
 | `TaskQueue` (read) | `core/orchestration/ports/task_queue.py` | `InMemoryTaskProjection` |
 | `TaskProjection` (read + `apply`) | `core/orchestration/ports/task_projection.py` | `InMemoryTaskProjection` |
+| `GitInspector` | `core/orchestration/ports/git_inspector.py` | `SubprocessGitInspector` |
+| `WorkflowReadModel` | `core/orchestration/ports/workflow_read_model.py` | `InMemoryWorkflowProjection` |
 
 ## Boundary enforcement (hard rule 4)
 

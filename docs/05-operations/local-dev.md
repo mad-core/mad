@@ -65,12 +65,12 @@ cp .env.example .env
 `.env.example` documents the full tunable surface. The variables that matter for
 local development:
 
-| Variable | Purpose | Default |
+| Variable | Purpose | Default / Resolution |
 |---|---|---|
-| `MAD_WORKSPACE_DIR` | Base dir for provisioned session workspaces (used verbatim, no `~`/`$VAR` expansion) | `~/mad` |
-| `MAD_SESSIONS_DIR` | Where per-session JSONL event logs are written | `./sessions` |
+| `MAD_WORKSPACE_DIR` | Base dir for provisioned session workspaces (used verbatim, no `~`/`$VAR` expansion) | `MAD_WORKSPACE_DIR` → `~/mad` → system temp dir (last resort) |
+| `MAD_SESSIONS_DIR` | Where per-session JSONL event logs are written (used verbatim, no `~`/`$VAR` expansion) | unset/blank → `./sessions` |
 | `MAD_SESSIONS_RETENTION_DAYS` | TTL purge of old session logs at startup; unset/`0`/negative keeps forever | keep forever |
-| `MAD_AGENT_TIMEOUT_S` | Operator-wide wall-clock budget for an agent run (per-session `timeout_s` overrides it) | `600` |
+| `MAD_AGENT_TIMEOUT_S` | Operator-wide wall-clock budget for an agent run; per-session `timeout_s` override on the create request takes precedence | `600` (resolution: per-session > env > 600) |
 | `MAD_CLAUDE_CLI_BIN` / `MAD_OPENCODE_BIN` | Override the launcher binary | `claude` / `opencode` |
 | `MAD_HOOK_SOCKET` | Path for the internal Unix Domain Socket used for hook ingestion | `$XDG_RUNTIME_DIR/mad/hooks.sock` or `/tmp/mad/hooks.sock` |
 | `MAD_SSE_HEARTBEAT_S` | SSE keep-alive heartbeat interval for `GET /v1/events/stream` | `15` |

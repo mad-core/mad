@@ -42,7 +42,11 @@ erDiagram
     SESSION ||--o{ EVENT : "logged as"
     SESSION ||--o{ TASK : "queues"
     SESSION ||--o| DISPATCHPOLICY : "may override"
+    SESSION ||--o{ WORKFLOW : "may create"
     DEPLOYMENTDISPATCHPOLICY ||--o{ SESSION : "default for"
+    WORKFLOW ||--o{ WORKFLOWSTEP : "contains"
+    WORKFLOWSTEP ||--o{ WORKFLOWMOUNT : "declares"
+    WORKFLOWSTEP ||--o| GITRESULT : "produces"
     SESSION {
         string session_id PK
         string status
@@ -59,12 +63,30 @@ erDiagram
         string session_id FK
         string content
     }
+    WORKFLOW {
+        string workflow_id PK
+        string session_id FK
+        datetime created_at
+    }
+    WORKFLOWSTEP {
+        string step_id PK
+        string workflow_id FK
+    }
+    WORKFLOWMOUNT {
+        string mount_path PK
+        string step_id FK
+    }
+    GITRESULT {
+        string head_sha PK
+        string base_sha
+        string head_branch
+    }
     DISPATCHPOLICY {
         string kind
     }
 ```
 
-The relationships are **logical**, reconstructed at runtime — there are no foreign keys on disk. A `Session` *is* its event stream; a `Task`'s lifecycle is a sub-sequence of `task.*` events within that stream; a `Session`'s `dispatch_policy` is rebuilt by replaying `dispatch_policy.updated` / `dispatch_policy.cleared` events (see `rehydrate.py`).
+The relationships are **logical**, reconstructed at runtime — there are no foreign keys on disk. A `Session` *is* its event stream; a `Task`'s lifecycle is a sub-sequence of `task.*` events within that stream; a `Session`'s `dispatch_policy` is rebuilt by replaying `dispatch_policy.updated` / `dispatch_policy.cleared` events (see `rehydrate.py`). A `Workflow`'s state is persisted as a `workflow.created` event containing the full graph; steps and their completion status are tracked via `task.completed` / `task.failed` events emitted by the launcher for each step's session.
 
 ## Session
 
@@ -160,6 +182,7 @@ The `orchestration` context (`src/mad/core/orchestration/domain/`) governs *how 
 | `scheduled_for` | `str` | Free-form schedule hint in v1: `"now"`, `"next_window"`, or an ISO-8601 timestamp. |
 | `created_at` | `datetime` | Arrival time; the `task.queued` timestamp drives cross-session ordering. |
 | `model` | `str \| None` | Per-task model override (highest precedence in the model resolver). |
+| `effort` | `str \| None` | Per-task reasoning-effort override (issue #81); highest precedence in the effort resolver (task > session > deployment). |
 | `conversation_mode` | `Literal["new", "resume"]` | Whether to start fresh or resume the session's conversation. |
 
 ### Dispatch policies (value objects)
@@ -186,13 +209,81 @@ These are **mutable process-global singletons** (not per-session), each persiste
 |---|---|---|---|
 | `DeploymentDispatchPolicy` (`deployment_policy.py`) | `default: DispatchPolicy \| None` | `__deployment__` | session override > deployment default > `ImmediatePolicy` |
 | `DeploymentModelConfig` (`model_config.py`) | `default_model: str \| None` | `__deployment_model__` | task > session > deployment > machine default > `None` |
-| `DeploymentEffortConfig` (`effort_config.py`) | `default_effort: str \| None` | `__deployment_effort__` | session > deployment > `None` |
+| `DeploymentEffortConfig` (`effort_config.py`) | `default_effort: str \| None` | `__deployment_effort__` | task > session > deployment > `None` |
 
 `timeout_config.py` is the parallel knob without a singleton: the operator default lives in the `MAD_AGENT_TIMEOUT_S` env var, and `resolve_effective_timeout` resolves session `timeout_s` > env > `DEFAULT_AGENT_TIMEOUT_S` (600 s). `retry_schedule.py` holds the rate-limit backoff constants (base 30 s, ×2, 1 h per-interval cap, 5 h cumulative ceiling, ±10% jitter) — pure functions, no persisted state.
 
 ### Orchestration exceptions
 
-`exceptions/base.py`: `TaskNotFound` (404), `TaskAlreadyDispatched` (409 — no in-flight cancel in v1), `SessionHasInFlightTask` (409 — `/messages` and the dispatcher are mutually exclusive on a session, ADR-0009 Decision 6). `exceptions/rate_limit.py`: `RateLimitError`, raised by a launcher when the agent exits rate-limited; carries `captured_id`, `reason`, and `retry_after_floor_s` to drive the backoff/resume loop (issue #62) — not persisted.
+`exceptions/base.py`: `TaskNotFound` (404), `TaskAlreadyDispatched` (409 — no in-flight cancel in v1), `SessionHasInFlightTask` (409 — `/messages` and the dispatcher are mutually exclusive on a session, ADR-0009 Decision 6). `exceptions/rate_limit.py`: `RateLimitError`, raised by a launcher when the agent exits rate-limited; carries `captured_id`, `reason`, and `retry_after_floor_s` to drive the backoff/resume loop (issue #62) — not persisted. `exceptions/workflow.py`: `InvalidWorkflow` (422 — a workflow graph is structurally invalid, e.g. dependency cycle, duplicate step ids, unknown `depends_on` / `from_step` reference, missing github mount), `WorkflowNotFound` (404).
+
+## Workflows (issue #90)
+
+The `workflow` feature enables sequential session chaining: a DAG of steps, each a normal Mad session plus a single task. A step may declare `depends_on` (predecessor step ids); its task is not enqueued until all of them complete. Workflows are **pure value objects** — no I/O — defined in `src/mad/core/orchestration/domain/workflow.py`.
+
+### Workflow, WorkflowStep, WorkflowMount
+
+`Workflow` is a frozen dataclass containing a `workflow_id`, a tuple of `WorkflowStep` s, and a `created_at` timestamp. It maintains an in-memory index of steps by id for fast lookup (`step_index`, not persisted).
+
+`WorkflowStep` represents one node in the DAG:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `step_id` | `str` | Unique within the workflow (enforced by `validate_workflow`). |
+| `agent` | `Mapping[str, Any]` | Agent descriptor for the step's session (e.g. `{"name": "claude", "provider": "claude_cli"}`). |
+| `prompt` | `str` | Opaque task content handed to the launcher verbatim (hard rule 1). |
+| `mounts` | `tuple[WorkflowMount, ...]` | Resources mounted into the step's session (repos, files). |
+| `depends_on` | `tuple[str, ...]` | Step ids of predecessors; the step's task is held unqueued until all complete. |
+| `base_branch` | `str \| None` | Git branch to check out in a cloned-repo mount, if any. |
+| `working_directory` | `str \| None` | Effective launcher cwd; defaults to workspace when blank. |
+| `model` | `str \| None` | Per-step model override. |
+| `effort` | `str \| None` | Per-step reasoning-effort override. |
+| `timeout_s` | `float \| None` | Per-step launcher timeout override (issue #61). |
+
+`WorkflowMount` declares one resource mounted into a step's session:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `mount_path` | `str` | Mount location (e.g. `/workspace/repo` or `/workspace/file.txt`). |
+| `type` | `str` | `"github_repository"` (default) or `"file"`. |
+| `url` | `str \| None` | GitHub repository URL for a github mount; `None` for inherited mounts. |
+| `from_step` | `str \| None` | For inherited mounts (branch propagation): the predecessor step id whose repo to clone. `None` for explicit mounts. |
+| `ref` | `RefMode` | How an inherited mount resolves the predecessor's produced ref: `"sha"` (default, immutable `head_sha`) or `"branch"` (tracks branch tip). Only used when `from_step` is set. |
+| `content` | `str` | For file mounts: the file content. Ignored for github mounts. |
+
+### Workflow validation and serialization
+
+`validate_workflow(steps)` enforces structural integrity: at least one step; unique non-empty step ids; every `depends_on` entry names a known step and is not the step itself; no dependency cycles; every `from_step` mount references a step in that step's `depends_on`; and that referenced step exposes a github mount. Malformed workflows raise `InvalidWorkflow` (mapped to 422). `_reject_cycles(steps)` uses depth-first-search (white/grey/black coloring) for cycle detection.
+
+`workflow_to_created_data` / `steps_from_created_data` serialize a workflow through the `workflow.created` event payload (`workflow_id` + steps dict list) so the graph survives process restart (hard rule 6). Step status is derived at runtime from `task.completed` / `task.failed` events: `derive_step_status` maps `started` / `completed` / `failed` flags to a single `StepStatus` (`pending | running | completed | failed`); `derive_workflow_status` rolls per-step statuses into a workflow-wide status.
+
+## Git observation entities
+
+After a dispatched task completes, Mad observes the workspace's git state and records it as a `task.git_result` event (issue #88). This is **filesystem observation**, never output parsing (hard rule 1) — the external agent makes commits; Mad only reads the result afterward.
+
+### Commit (value object)
+
+`src/mad/core/orchestration/domain/git_result.py` — a frozen dataclass capturing one commit the agent created:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `sha` | `str` | Full 40-char hex object name. |
+| `subject` | `str` | First line of the commit message verbatim. No body, no diff (hard rule 1). |
+
+### GitResult (value object)
+
+Metadata-only, deliberately not including diff or commit contents (hard rule 1 / issue #88 out-of-scope):
+
+| Field | Type | Meaning |
+|---|---|---|
+| `base_sha` | `str` | HEAD captured at dispatch time (before the agent ran). |
+| `head_sha` | `str` | HEAD after the task completed. |
+| `head_branch` | `str \| None` | Current branch name, or `"HEAD"` in detached-HEAD state (reported, not crashed — issue #88 AC). |
+| `commits` | `tuple[Commit, ...]` | Everything in `base_sha..head_sha` in reverse-chronological order; possibly empty (a task creating no commits still produces a result — the negative twin). |
+| `dirty` | `bool` | True when uncommitted changes remain in the working tree. |
+| `pushed` | `bool` | True when `head_branch` exists on `origin` (the downstream branch-propagation feature #90 consumes this to decide whether a dependent session can re-clone the produced branch). |
+
+`to_event_data(task_id)` serializes the `GitResult` to the `task.git_result` event data payload: `task_id`, `base_sha`, `head_branch`, `head_sha`, `commits` (list of `{sha, subject}` dicts), `dirty`, `pushed`.
 
 ## On-disk paths and layout
 

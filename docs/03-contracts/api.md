@@ -102,7 +102,7 @@ OpenAPI dumped from `mad.adapters.inbound.http.asgi:app`. Reconstructable from `
         "type": "object"
       },
       "ClearDispatchPolicyResponse": {
-        "description": "Returned after ``DELETE`` clears a session's override (issue #45).\n\n``inherited`` is always ``True`` (the session now inherits);\n``effective_policy`` is the policy that governs the session after the\nclear \u2014 the deployment default, or ``immediate`` when none is set.",
+        "description": "Returned after ``DELETE`` clears a session's override (issue #45).\n\n``inherited`` is always ``True`` (the session now inherits);\n``effective_policy`` is the policy that governs the session after the\nclear — the deployment default, or ``immediate`` when none is set.",
         "properties": {
           "effective_policy": {
             "additionalProperties": true,
@@ -151,7 +151,7 @@ OpenAPI dumped from `mad.adapters.inbound.http.asgi:app`. Reconstructable from `
                 "type": "null"
               }
             ],
-            "description": "Optional reasoning-effort level; overrides the deployment default for this session. Forwarded verbatim to the provider CLI (``--effort`` for claude, ``--variant`` for opencode) \u2014 an opaque pass-through string, not validated by Mad. ``null`` (default) inherits from the deployment effort default.",
+            "description": "Optional reasoning-effort level; overrides the deployment default for this session. Forwarded verbatim to the provider CLI (``--effort`` for claude, ``--variant`` for opencode) — an opaque pass-through string, not validated by Mad. ``null`` (default) inherits from the deployment effort default.",
             "title": "Effort"
           },
           "model": {
@@ -205,8 +205,43 @@ OpenAPI dumped from `mad.adapters.inbound.http.asgi:app`. Reconstructable from `
         "title": "CreateSessionRequest",
         "type": "object"
       },
+      "CreateWorkflowRequest": {
+        "properties": {
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowStepRequest"
+            },
+            "minItems": 1,
+            "title": "Steps",
+            "type": "array"
+          }
+        },
+        "required": [
+          "steps"
+        ],
+        "title": "CreateWorkflowRequest",
+        "type": "object"
+      },
+      "CreateWorkflowResponse": {
+        "properties": {
+          "status": {
+            "default": "pending",
+            "title": "Status",
+            "type": "string"
+          },
+          "workflow_id": {
+            "title": "Workflow Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workflow_id"
+        ],
+        "title": "CreateWorkflowResponse",
+        "type": "object"
+      },
       "DeploymentDispatchPolicyResponse": {
-        "description": "The deployment-wide default policy (issue #45).\n\n``policy`` is the canonical serialized form. When no deployment policy\nhas been configured, this echoes ``{\"kind\": \"immediate\"}`` \u2014 the\neffective default that inheriting sessions fall back to.",
+        "description": "The deployment-wide default policy (issue #45).\n\n``policy`` is the canonical serialized form. When no deployment policy\nhas been configured, this echoes ``{\"kind\": \"immediate\"}`` — the\neffective default that inheriting sessions fall back to.",
         "properties": {
           "policy": {
             "additionalProperties": true,
@@ -221,7 +256,7 @@ OpenAPI dumped from `mad.adapters.inbound.http.asgi:app`. Reconstructable from `
         "type": "object"
       },
       "DeploymentEffortResponse": {
-        "description": "Current deployment-wide reasoning-effort default.\n\n``effort`` is ``null`` when no deployment effort has been set \u2014 sessions\nwith no override will use the provider's machine-configured default (no\n``--effort`` / ``--variant`` flag is passed).",
+        "description": "Current deployment-wide reasoning-effort default.\n\n``effort`` is ``null`` when no deployment effort has been set — sessions\nwith no override will use the provider's machine-configured default (no\n``--effort`` / ``--variant`` flag is passed).",
         "properties": {
           "effort": {
             "anyOf": [
@@ -239,7 +274,7 @@ OpenAPI dumped from `mad.adapters.inbound.http.asgi:app`. Reconstructable from `
         "type": "object"
       },
       "DeploymentModelResponse": {
-        "description": "Current deployment-wide model default.\n\n``model`` is ``null`` when no deployment model has been set \u2014 sessions\nwith no override will use the provider's machine-configured default.",
+        "description": "Current deployment-wide model default.\n\n``model`` is ``null`` when no deployment model has been set — sessions\nwith no override will use the provider's machine-configured default.",
         "properties": {
           "model": {
             "anyOf": [
@@ -293,6 +328,18 @@ OpenAPI dumped from `mad.adapters.inbound.http.asgi:app`. Reconstructable from `
             "title": "Conversation Mode",
             "type": "string"
           },
+          "effort": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional reasoning-effort for this task. Overrides the session and deployment effort defaults when set. ``null`` (default) inherits from the session or deployment default. Forwarded verbatim to the launcher (``--effort`` for claude, ``--variant`` for opencode); never validated.",
+            "title": "Effort"
+          },
           "model": {
             "anyOf": [
               {
@@ -307,7 +354,7 @@ OpenAPI dumped from `mad.adapters.inbound.http.asgi:app`. Reconstructable from `
           },
           "scheduled_for": {
             "default": "now",
-            "description": "Scheduling hint. ``now`` (default) preserves the immediate-dispatch behaviour. Other values (``next_window``, ISO 8601 timestamps) are accepted but not interpreted in v1 \u2014 recorded on the event verbatim.",
+            "description": "Scheduling hint. ``now`` (default) preserves the immediate-dispatch behaviour. Other values (``next_window``, ISO 8601 timestamps) are accepted but not interpreted in v1 — recorded on the event verbatim.",
             "title": "Scheduled For",
             "type": "string"
           }
@@ -348,7 +395,7 @@ OpenAPI dumped from `mad.adapters.inbound.http.asgi:app`. Reconstructable from `
         "type": "object"
       },
       "GlobalQueueResponse": {
-        "description": "``GET /v1/queue`` \u2014 policy groups are never flattened: ``ready``\nholds only sessions dispatchable right now (true dispatch order;\n``ready[0]`` is what dispatches next), ``scheduled`` holds the\nwindow-gated / manual ones with a reason.",
+        "description": "``GET /v1/queue`` — policy groups are never flattened: ``ready``\nholds only sessions dispatchable right now (true dispatch order;\n``ready[0]`` is what dispatches next), ``scheduled`` holds the\nwindow-gated / manual ones with a reason.",
         "properties": {
           "in_flight": {
             "anyOf": [
@@ -873,6 +920,17 @@ OpenAPI dumped from `mad.adapters.inbound.http.asgi:app`. Reconstructable from `
             "title": "Created At",
             "type": "string"
           },
+          "effort": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effort"
+          },
           "model": {
             "anyOf": [
               {
@@ -905,7 +963,7 @@ OpenAPI dumped from `mad.adapters.inbound.http.asgi:app`. Reconstructable from `
           },
           "status": {
             "default": "dispatched",
-            "description": "``dispatched`` \u2014 the task is running normally. ``retrying`` \u2014 the task hit a rate limit and is sleeping before the next attempt; see ``retry_info`` for details.",
+            "description": "``dispatched`` — the task is running normally. ``retrying`` — the task hit a rate limit and is sleeping before the next attempt; see ``retry_info`` for details.",
             "enum": [
               "dispatched",
               "retrying"
@@ -1048,6 +1106,266 @@ OpenAPI dumped from `mad.adapters.inbound.http.asgi:app`. Reconstructable from `
         "title": "WindowSpec",
         "type": "object"
       },
+      "WorkflowMountRequest": {
+        "properties": {
+          "content": {
+            "default": "",
+            "description": "Inline content for a 'file' mount.",
+            "title": "Content",
+            "type": "string"
+          },
+          "from_step": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Inherit this github mount's repo URL from a predecessor step and check out what it produced. Must be listed in the step's depends_on and reference a step that has a github mount, else 422.",
+            "title": "From Step"
+          },
+          "mount_path": {
+            "description": "Where the resource mounts in the workspace.",
+            "title": "Mount Path",
+            "type": "string"
+          },
+          "ref": {
+            "default": "sha",
+            "description": "For a from_step mount: 'sha' (default) pins the predecessor's immutable head_sha; 'branch' tracks its branch tip.",
+            "enum": [
+              "sha",
+              "branch"
+            ],
+            "title": "Ref",
+            "type": "string"
+          },
+          "type": {
+            "default": "github_repository",
+            "enum": [
+              "github_repository",
+              "file"
+            ],
+            "title": "Type",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Explicit github repo URL. Mutually exclusive with from_step.",
+            "title": "Url"
+          }
+        },
+        "required": [
+          "mount_path"
+        ],
+        "title": "WorkflowMountRequest",
+        "type": "object"
+      },
+      "WorkflowStepRequest": {
+        "properties": {
+          "depends_on": {
+            "default": [],
+            "description": "Zero or more predecessor step ids. The step's task is not enqueued until all of them emit task.completed. An ordering barrier on its own — independent of from_step.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Depends On",
+            "type": "array"
+          },
+          "id": {
+            "description": "Unique step id, referenced by depends_on / from_step.",
+            "title": "Id",
+            "type": "string"
+          },
+          "session": {
+            "$ref": "#/components/schemas/WorkflowStepSession"
+          }
+        },
+        "required": [
+          "id",
+          "session"
+        ],
+        "title": "WorkflowStepRequest",
+        "type": "object"
+      },
+      "WorkflowStepSession": {
+        "description": "A step's session configuration: the agent, the task prompt, and mounts.",
+        "properties": {
+          "agent": {
+            "$ref": "#/components/schemas/AgentSpec"
+          },
+          "base_branch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Branch"
+          },
+          "effort": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effort"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "mounts": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/WorkflowMountRequest"
+            },
+            "title": "Mounts",
+            "type": "array"
+          },
+          "prompt": {
+            "description": "Opaque task content forwarded verbatim to the launcher.",
+            "title": "Prompt",
+            "type": "string"
+          },
+          "timeout_s": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timeout S"
+          },
+          "working_directory": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Working Directory"
+          }
+        },
+        "required": [
+          "agent",
+          "prompt"
+        ],
+        "title": "WorkflowStepSession",
+        "type": "object"
+      },
+      "WorkflowStatusResponse": {
+        "properties": {
+          "status": {
+            "enum": [
+              "pending",
+              "running",
+              "completed",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowStepStatusResponse"
+            },
+            "title": "Steps",
+            "type": "array"
+          },
+          "workflow_id": {
+            "title": "Workflow Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workflow_id",
+          "status",
+          "steps"
+        ],
+        "title": "WorkflowStatusResponse",
+        "type": "object"
+      },
+      "WorkflowStepStatusResponse": {
+        "properties": {
+          "depends_on": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Depends On",
+            "type": "array"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Failure reason when status == 'failed'.",
+            "title": "Reason"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "running",
+              "completed",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "step_id": {
+            "title": "Step Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "step_id",
+          "status"
+        ],
+        "title": "WorkflowStepStatusResponse",
+        "type": "object"
+      },
       "WorkWindowPolicyRequest": {
         "properties": {
           "kind": {
@@ -1101,7 +1419,7 @@ OpenAPI dumped from `mad.adapters.inbound.http.asgi:app`. Reconstructable from `
         ]
       },
       "put": {
-        "description": "Set the deployment-wide default dispatch policy.\n\nReuses the same discriminated union as the per-session ``PATCH``\n(``immediate`` / ``work_window`` / ``manual``). Every inheriting session\nhonours the new default on the next dispatch evaluation (live\ninheritance \u2014 no restart, no per-session re-PATCH). Emits\n``dispatch_policy.default.updated`` so the singleton is rebuilt on\nrestart via JSONL replay (hard rule 6).",
+        "description": "Set the deployment-wide default dispatch policy.\n\nReuses the same discriminated union as the per-session ``PATCH``\n(``immediate`` / ``work_window`` / ``manual``). Every inheriting session\nhonours the new default on the next dispatch evaluation (live\ninheritance — no restart, no per-session re-PATCH). Emits\n``dispatch_policy.default.updated`` so the singleton is rebuilt on\nrestart via JSONL replay (hard rule 6).",
         "operationId": "set_deployment_dispatch_policy_v1_dispatch_policy_put",
         "requestBody": {
           "content": {
@@ -1182,7 +1500,7 @@ OpenAPI dumped from `mad.adapters.inbound.http.asgi:app`. Reconstructable from `
         ]
       },
       "get": {
-        "description": "Read the deployment-wide default reasoning effort.\n\nReturns ``null`` for ``effort`` when no default has been set \u2014 the provider\nuses its own machine-configured default in that case.",
+        "description": "Read the deployment-wide default reasoning effort.\n\nReturns ``null`` for ``effort`` when no default has been set — the provider\nuses its own machine-configured default in that case.",
         "operationId": "get_deployment_effort_v1_effort_get",
         "responses": {
           "200": {
@@ -1202,7 +1520,7 @@ OpenAPI dumped from `mad.adapters.inbound.http.asgi:app`. Reconstructable from `
         ]
       },
       "put": {
-        "description": "Set the deployment-wide default reasoning effort.\n\nEvery session that has no per-session ``effort`` override will use this\ndefault on the next launcher invocation (live inheritance \u2014 no restart\nrequired). Emits ``effort.default.updated`` so the setting survives a\nrestart via JSONL replay (hard rule 6). The value is opaque \u2014 Mad does\nnot validate it against any provider's effort levels.",
+        "description": "Set the deployment-wide default reasoning effort.\n\nEvery session that has no per-session ``effort`` override will use this\ndefault on the next launcher invocation (live inheritance — no restart\nrequired). Emits ``effort.default.updated`` so the setting survives a\nrestart via JSONL replay (hard rule 6). The value is opaque — Mad does\nnot validate it against any provider's effort levels.",
         "operationId": "set_deployment_effort_v1_effort_put",
         "requestBody": {
           "content": {
@@ -1488,7 +1806,7 @@ OpenAPI dumped from `mad.adapters.inbound.http.asgi:app`. Reconstructable from `
         ]
       },
       "get": {
-        "description": "Read the deployment-wide default model.\n\nReturns ``null`` for ``model`` when no default has been set \u2014 the provider\nuses its own machine-configured default in that case.",
+        "description": "Read the deployment-wide default model.\n\nReturns ``null`` for ``model`` when no default has been set — the provider\nuses its own machine-configured default in that case.",
         "operationId": "get_deployment_model_v1_model_get",
         "responses": {
           "200": {
@@ -1508,7 +1826,7 @@ OpenAPI dumped from `mad.adapters.inbound.http.asgi:app`. Reconstructable from `
         ]
       },
       "put": {
-        "description": "Set the deployment-wide default model.\n\nEvery session that has no per-session ``model`` override will use this\ndefault on the next launcher invocation (live inheritance \u2014 no restart\nrequired). Emits ``model.default.updated`` so the setting survives a\nrestart via JSONL replay (hard rule 6).",
+        "description": "Set the deployment-wide default model.\n\nEvery session that has no per-session ``model`` override will use this\ndefault on the next launcher invocation (live inheritance — no restart\nrequired). Emits ``model.default.updated`` so the setting survives a\nrestart via JSONL replay (hard rule 6).",
         "operationId": "set_deployment_model_v1_model_put",
         "requestBody": {
           "content": {
@@ -1571,7 +1889,7 @@ OpenAPI dumped from `mad.adapters.inbound.http.asgi:app`. Reconstructable from `
     },
     "/v1/queue": {
       "get": {
-        "description": "Global queue view across all sessions, policy-aware.\n\n``ready`` is computed with the same ordering function AND the same\neffective-policy resolution (per-session override, else the\ndeployment default, else immediate \u2014 issue #45) the dispatcher\nuses, so ``ready[0]`` is exactly the next dispatch.",
+        "description": "Global queue view across all sessions, policy-aware.\n\n``ready`` is computed with the same ordering function AND the same\neffective-policy resolution (per-session override, else the\ndeployment default, else immediate — issue #45) the dispatcher\nuses, so ``ready[0]`` is exactly the next dispatch.",
         "operationId": "get_global_queue_v1_queue_get",
         "responses": {
           "200": {
@@ -1967,7 +2285,7 @@ OpenAPI dumped from `mad.adapters.inbound.http.asgi:app`. Reconstructable from `
         ]
       },
       "patch": {
-        "description": "Set the dispatch policy for a session.\n\nThe body is a discriminated union on ``kind``:\n- ``{\"kind\": \"immediate\"}`` (default \u2014 same as today)\n- ``{\"kind\": \"work_window\", \"windows\": [...]}`` (overnight runs etc.)\n- ``{\"kind\": \"manual\"}`` (queue accumulates; explicit trigger drains)\n\nEmits ``dispatch_policy.updated`` so the policy survives a process\nrestart via JSONL replay.",
+        "description": "Set the dispatch policy for a session.\n\nThe body is a discriminated union on ``kind``:\n- ``{\"kind\": \"immediate\"}`` (default — same as today)\n- ``{\"kind\": \"work_window\", \"windows\": [...]}`` (overnight runs etc.)\n- ``{\"kind\": \"manual\"}`` (queue accumulates; explicit trigger drains)\n\nEmits ``dispatch_policy.updated`` so the policy survives a process\nrestart via JSONL replay.",
         "operationId": "update_dispatch_policy_v1_sessions__session_id__dispatch_policy_patch",
         "parameters": [
           {
@@ -2328,6 +2646,89 @@ OpenAPI dumped from `mad.adapters.inbound.http.asgi:app`. Reconstructable from `
         "summary": "Cancel Task",
         "tags": [
           "orchestration"
+        ]
+      }
+    },
+    "/v1/workflows": {
+      "post": {
+        "operationId": "create_workflow_v1_workflows_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateWorkflowRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateWorkflowResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Workflow",
+        "tags": [
+          "workflows"
+        ]
+      }
+    },
+    "/v1/workflows/{workflow_id}": {
+      "get": {
+        "operationId": "get_workflow_v1_workflows__workflow_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workflow_id",
+            "required": true,
+            "schema": {
+              "title": "Workflow Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Workflow",
+        "tags": [
+          "workflows"
         ]
       }
     }

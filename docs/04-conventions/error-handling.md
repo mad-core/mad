@@ -24,6 +24,8 @@ responses, but the taxonomy is identical.
   `PathTraversalError`, `SessionNotFound`.
 - `src/mad/core/orchestration/domain/exceptions/base.py` — `TaskNotFound`,
   `TaskAlreadyDispatched`, `SessionHasInFlightTask`.
+- `src/mad/core/orchestration/domain/exceptions/workflow.py` — `InvalidWorkflow`,
+  `WorkflowNotFound`.
 - `src/mad/core/orchestration/domain/dispatch_policy.py` — `InvalidDispatchPolicy`
   (subclass of `ValueError`).
 - `src/mad/core/orchestration/domain/ordering.py` — `InvalidPriority`
@@ -33,7 +35,7 @@ responses, but the taxonomy is identical.
 - `src/mad/core/orchestration/use_cases/trigger_manual_dispatch.py` —
   `TriggerNotApplicable`.
 - `src/mad/adapters/outbound/persistence/local_workspace_provisioner.py` —
-  `MalformedSettingsLocalJson` (subclass of `ValueError`).
+  `MalformedSettingsLocalJson` (subclass of `ValueError`), `GitCloneError`.
 - `src/mad/core/orchestration/domain/exceptions/rate_limit.py` — `RateLimitError`
   (launcher-internal; never reaches the HTTP boundary — see below).
 - `src/mad/adapters/outbound/agents/claude_cli.py` — `ClaudeCLIError`
@@ -58,14 +60,17 @@ envelope so clients parse one shape everywhere.
 | `InvalidPriority` | A priority outside `[MIN_PRIORITY, MAX_PRIORITY]` or a non-int; rejected loudly rather than silently clamped (issue #46). Subclasses `ValueError`, mapped to 422. | 422 | `{"detail": "priority must be ..."}` |
 | `InvalidModelError` | The requested model is not in the provider's advertised catalog. Subclasses `ValueError`, mapped to 422. | 422 | `{"detail": "Model '<m>' is not available for provider '<p>'. Available: [...]"}` |
 | `TriggerNotApplicable` | A manual dispatch trigger arrived for a session whose policy is not manual. | 409 | `{"detail": "manual trigger does not apply to session <id> with dispatch policy '<kind>'"}` |
+| `GitCloneError` | The upstream repository clone failed (e.g. a private repo with no host credential). Upstream authentication / availability failures are distinguished from malformed requests. | 502 | `{"detail": "<message>"}` |
+| `InvalidWorkflow` | A malformed workflow body: cyclic dependency graph, unknown `depends_on` reference, or dangling `from_step`. Subclasses `ValueError` but is mapped to 422, not 400, because it is a defect in the caller's payload (issue #90). | 422 | `{"detail": "<message>"}` |
+| `WorkflowNotFound` | The `workflow_id` does not exist in the workflow read model. | 404 | `{"detail": "workflow not found: <workflow_id>"}` |
 
-Handler-ordering note: `InvalidDispatchPolicy`, `InvalidPriority`, and
-`InvalidModelError` all inherit from `ValueError`, which also has a generic
+Handler-ordering note: `InvalidDispatchPolicy`, `InvalidPriority`, `InvalidModelError`,
+and `InvalidWorkflow` all inherit from `ValueError`, which also has a generic
 handler (400). FastAPI dispatches to the most specific registered handler, so
-these three resolve to 422 while every other bare `ValueError` falls through to
-the 400 handler. The 422 choice for these three is intentional and documented
-inline in `app.py`: an out-of-range / unknown value is a validation defect in the
-caller's payload, distinguished from a generic bad request.
+these four resolve to 422 while every other bare `ValueError` falls through to
+the 400 handler. The 422 choice for these four is intentional and documented
+inline in `app.py`: an out-of-range / unknown value, or a defect in a structural
+payload, is a validation error distinct from a generic bad request.
 
 ## Automatic 422 from request validation (hard rule 9)
 

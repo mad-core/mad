@@ -53,8 +53,8 @@ observability-only (hard rule 8, ADR-0004): it never writes the log.
 ## Orchestration
 
 Source: `src/mad/core/orchestration/use_cases/`. Routes:
-`src/mad/adapters/inbound/http/routes/orchestration.py` and
-`.../routes/providers.py`. The task `content` is opaque and never inspected
+`src/mad/adapters/inbound/http/routes/orchestration.py`,
+`.../routes/providers.py`, and `.../routes/workflows.py`. The task `content` is opaque and never inspected
 (ADR-0009, hard rule 1).
 
 ### Task queue (per-session)
@@ -92,6 +92,13 @@ Source: `deployment_model_config.py`, `deployment_effort_config.py`,
 | `SetDeploymentEffortUseCase` | Set the process-global default effort (opaque pass-through string). | `PUT /v1/effort` / `mad_set_deployment_effort` | Emits `effort.default.updated` under the reserved effort log. |
 | `ClearDeploymentEffortUseCase` | Clear the default effort (revert to provider-chosen). | `DELETE /v1/effort` / `mad_clear_deployment_effort` | Emits `effort.default.cleared`. |
 
+### Workflows (issue #90)
+
+| Operation | Description | Input surface | Side effects |
+|---|---|---|---|
+| `CreateWorkflowUseCase` | Validate and persist a DAG of workflow steps; each step is a session configuration plus optional `depends_on` list (ordering barrier). A step's github mount may inherit a predecessor's repo via `from_step`. Rejects cyclic graphs, unknown `depends_on`, or dangling `from_step` with 422. | `POST /v1/workflows` / `mad_create_workflow` | Emits `workflow.created` under the reserved `workflow_id` stream; the `WorkflowCoordinator` reacts and provisions steps as they become eligible. |
+| `GetWorkflowUseCase` | Retrieve a workflow's status (pending / running / completed / failed) and per-step status. Reads from the `WorkflowReadModel` projection (rebuilt from `workflow.*` events). | `GET /v1/workflows/{workflow_id}` / `mad_get_workflow` | None (read-only). |
+
 ### Background / lifecycle (no request surface)
 
 These run on the asyncio loop or at app startup, not behind a route.
@@ -100,6 +107,7 @@ These run on the asyncio loop or at app startup, not behind a route.
 |---|---|---|---|
 | `Dispatcher` | The orchestration loop: drains the global queue one task at a time (ADR-0009), reacting to `task.queued` on the bus plus a periodic tick; retries rate-limited runs with backoff; defers tasks when a work window closes. | Lifespan-managed asyncio task (`start()` / `stop()`) | Emits `task.dispatched`, `task.completed`, `task.failed`, `task.retrying`, `task.deferred`, `task.queued_for_window`; drives the agent launcher via `_run_launcher` (which emits the `session.*` / `agent.output` lifecycle). |
 | `Dispatcher._recover_orphans` | On restart, fail any task left in-flight by a crashed process. | Called inside `Dispatcher.start()` | Emits `task.failed` with `reason="interrupted_by_restart"`. |
+| `WorkflowCoordinator` | Advances eligible workflow steps: reacts to `workflow.created` on the bus, waits for each step's `depends_on` predecessors to complete, provisions the step's session (resolving any `from_step` mount as a fresh clone at the predecessor's produced ref — ADR-0013), enqueues its task, and marks steps completed / failed. Translates underlying `task.completed` / `task.failed` to `workflow.step.completed` / `workflow.step.failed` so the read projection is reconstructable from the workflow stream alone. | Lifespan-managed asyncio task (`start()` / `stop()`); rehydrates from log via `bootstrap_from_log` at startup. | Per step: emits `workflow.step.started` (with session_id or None if provisioning failed), `workflow.step.completed`, or `workflow.step.failed` (with reason); marks workflow terminal (`workflow.completed` or `workflow.failed` for the whole workflow on first step failure). On restart, reconciles any step whose task terminated while down via `_resume()`. |
 | `rehydrate_pending_sessions` | Rebuild into the live index only the sessions the projection says still have queued / in-flight work, by replaying their JSONL log. | App startup (after projection bootstrap, before dispatcher start) | None (rebuilds `sessions_index`; no events). |
 | `bootstrap_deployment_policy` | Replay the reserved deployment-policy log into the live holder so the default survives restart. | App startup | None (rebuilds the deployment policy holder). |
 | `bootstrap_deployment_model_config` | Replay the reserved model log into the live holder. | App startup | None (rebuilds the deployment model config). |

@@ -21,7 +21,8 @@ src/mad/
 │   │   │   │   ├── events.py
 │   │   │   │   ├── orchestration.py
 │   │   │   │   ├── providers.py
-│   │   │   │   └── sessions.py
+│   │   │   │   ├── sessions.py
+│   │   │   │   └── workflows.py
 │   │   │   ├── __init__.py
 │   │   │   ├── app.py
 │   │   │   ├── asgi.py
@@ -53,8 +54,10 @@ src/mad/
 │   │   │   └── jsonl_event_log_query.py
 │   │   ├── orchestration/
 │   │   │   ├── __init__.py
+│   │   │   ├── git_inspector.py
 │   │   │   ├── projection.py
-│   │   │   └── system_clock.py
+│   │   │   ├── system_clock.py
+│   │   │   └── workflow_projection.py
 │   │   ├── persistence/
 │   │   │   ├── __init__.py
 │   │   │   ├── jsonl_session_repository.py
@@ -83,38 +86,46 @@ src/mad/
 │   │   │   ├── exceptions/
 │   │   │   │   ├── __init__.py
 │   │   │   │   ├── base.py
-│   │   │   │   └── rate_limit.py
+│   │   │   │   ├── rate_limit.py
+│   │   │   │   └── workflow.py
 │   │   │   ├── __init__.py
 │   │   │   ├── deployment_policy.py
 │   │   │   ├── dispatch_policy.py
 │   │   │   ├── effort_config.py
+│   │   │   ├── git_result.py
 │   │   │   ├── model_config.py
 │   │   │   ├── ordering.py
 │   │   │   ├── retry_schedule.py
 │   │   │   ├── task.py
-│   │   │   └── timeout_config.py
+│   │   │   ├── timeout_config.py
+│   │   │   └── workflow.py
 │   │   ├── ports/
 │   │   │   ├── __init__.py
 │   │   │   ├── clock.py
+│   │   │   ├── git_inspector.py
 │   │   │   ├── model_catalog.py
 │   │   │   ├── task_projection.py
-│   │   │   └── task_queue.py
+│   │   │   ├── task_queue.py
+│   │   │   └── workflow_read_model.py
 │   │   ├── use_cases/
 │   │   │   ├── __init__.py
 │   │   │   ├── cancel_task.py
 │   │   │   ├── clear_dispatch_policy.py
+│   │   │   ├── create_workflow.py
 │   │   │   ├── deployment_dispatch_policy.py
 │   │   │   ├── deployment_effort_config.py
 │   │   │   ├── deployment_model_config.py
 │   │   │   ├── dispatcher.py
 │   │   │   ├── enqueue_task.py
 │   │   │   ├── get_global_queue.py
+│   │   │   ├── get_workflow.py
 │   │   │   ├── list_provider_models.py
 │   │   │   ├── list_tasks.py
 │   │   │   ├── rehydrate_pending_sessions.py
 │   │   │   ├── trigger_manual_dispatch.py
 │   │   │   ├── update_dispatch_policy.py
-│   │   │   └── update_dispatch_priority.py
+│   │   │   ├── update_dispatch_priority.py
+│   │   │   └── workflow_coordinator.py
 │   │   └── __init__.py
 │   ├── sessions/
 │   │   ├── domain/
@@ -146,6 +157,7 @@ src/mad/
 │   │   │   ├── list_sessions.py
 │   │   │   └── send_user_message.py
 │   │   ├── __init__.py
+│   │   ├── credentials.py
 │   │   └── store.py
 │   └── __init__.py
 ├── entry_points/

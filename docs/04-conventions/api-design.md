@@ -25,7 +25,7 @@ literal (e.g. `@router.post("/v1/sessions")`), not injected by a router-level
 `prefix=` argument. Adding a `/v2` later is therefore a per-route decision, not
 a global switch.
 
-Routes are split across four router modules, each constructed with an OpenAPI
+Routes are split across five router modules, each constructed with an OpenAPI
 `tags=[...]` label so `/docs` groups them:
 
 | Module | Tag | Surface |
@@ -34,8 +34,9 @@ Routes are split across four router modules, each constructed with an OpenAPI
 | `routes/events.py` | `events` | cross-session observability: historical query + SSE stream |
 | `routes/orchestration.py` | `orchestration` | task queue, dispatch policies, priority, global queue |
 | `routes/providers.py` | `providers` | model discovery, deployment model + reasoning-effort defaults |
+| `routes/workflows.py` | `workflows` | sequential session chaining: create workflow, get workflow status |
 
-`create_app(...)` in `app.py` wires them with four `app.include_router(...)`
+`create_app(...)` in `app.py` wires them with five `app.include_router(...)`
 calls, then mounts the MCP ASGI app at `/mcp`. Each handler is a thin layer:
 it parses the typed request, instantiates the relevant use case with
 dependencies pulled from `request.app.state`, calls `use_case.execute(...)`,
@@ -76,6 +77,9 @@ handler runs. Concrete examples:
   out-of-range values rather than clamping them.
 - `PUT /v1/model` and `PUT /v1/effort` take `SetDeploymentModelRequest` and
   `SetDeploymentEffortRequest`.
+- `POST /v1/workflows` takes `CreateWorkflowRequest`, whose `steps` is a
+  `list[WorkflowStepRequest]` with validation like `min_length=1` to reject
+  empty workflows at the boundary.
 
 Query parameters are typed the same way, with `Annotated[..., Query(...)]`
 carrying constraints — for example `limit: Annotated[int, Query(ge=1, le=1000)]`
@@ -96,6 +100,9 @@ model directly:
 - `GET /v1/sessions/{session_id}/tasks` -> `ListTasksResponse`
 - `GET /v1/queue` -> `GlobalQueueResponse`
 - `GET /v1/providers/models` -> `ProviderModelsResponse`
+- `POST /v1/workflows` -> `CreateWorkflowResponse`
+  (with `status_code=status.HTTP_202_ACCEPTED`)
+- `GET /v1/workflows/{workflow_id}` -> `WorkflowStatusResponse`
 - the dispatch-policy, priority, model, and effort routes each return their own
   `*Response` model.
 
@@ -114,9 +121,10 @@ failures that only the domain can detect are raised as domain exceptions by the
 use cases and mapped to status codes by app-level `@app.exception_handler`
 registrations in `app.py`, keeping the handlers thin. For example
 `SessionNotFound` -> 404, `PathTraversalError` -> 400, `TaskAlreadyDispatched`
-and `SessionHasInFlightTask` and `TriggerNotApplicable` -> 409, and
-`InvalidDispatchPolicy` / `InvalidPriority` / `InvalidModelError` -> 422 (an
-out-of-range priority is treated as a payload defect, never silently clamped).
+and `SessionHasInFlightTask` and `TriggerNotApplicable` -> 409, `WorkflowNotFound`
+-> 404, and `InvalidDispatchPolicy` / `InvalidPriority` / `InvalidModelError` /
+`InvalidWorkflow` -> 422 (an out-of-range priority or a cyclic workflow is
+treated as a payload defect, never silently clamped).
 
 ## HTTP <-> MCP tool parity (hard rule 13, ADR-0012)
 
@@ -128,8 +136,9 @@ with the **same in-process dependencies** and returns the **same Pydantic
 model** the HTTP handler returns; it carries no logic the route doesn't. This
 is what keeps the two boundaries from drifting — schema parity follows from
 reusing the route modules' models (the MCP server imports `CreateSessionRequest`,
-`SessionDetailResponse`, `EnqueueTaskRequest`, etc. directly from
-`routes/*.py`), and surface parity follows from the one-tool-per-route rule.
+`SessionDetailResponse`, `CreateWorkflowRequest`, `WorkflowStatusResponse`,
+`EnqueueTaskRequest`, etc. directly from `routes/*.py`), and surface parity
+follows from the one-tool-per-route rule.
 
 Adding, changing, or removing an HTTP route REQUIRES the mirrored change to its
 MCP tool in the **same PR**. Each tool's description ends with a

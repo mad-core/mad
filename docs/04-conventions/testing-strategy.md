@@ -174,21 +174,38 @@ production where ambiguity exists, to fail loudly on contract drift.
 
 Current shared doubles:
 
-- `tests/support/launchers.py` — `ScriptedLauncher` and `RecordingLauncher`,
-  `AgentLauncher` doubles that emit scripted event sequences deterministically.
-  This is how tests script launcher behavior without ever spawning the real
-  `claude` CLI (hard rule 5).
+- `tests/support/launchers.py` — `AgentLauncher` test doubles that mock or
+  script external agent behavior without spawning real processes (hard rule 5):
+  - `ScriptedLauncher` — emits pre-scripted event sequences deterministically.
+    Supports per-run conversation IDs and exception-raising runs for rate-limit
+    retry tests.
+  - `RecordingLauncher` — records every prompt and emits a single
+    `session.status_idle` event per run; used when tests only care about
+    *which prompts* the use case invokes.
+  - `RaisingLauncher` — raises a fixed exception on every run; used to exercise
+    dispatcher failure paths.
+  - `GatedLauncher` — blocks until `release()` is called; used to assert that
+    dependent workflow steps are held unqueued during predecessor execution.
 - `tests/support/events.py` — `EventBus` / `EventLogQuery` doubles and an
   in-memory event store, so event-module tests share one implementation.
 - `tests/support/sessions.py` — `FakeSessionRepository` (doubles as a
-  `SessionRepository` and an `EventStore`).
-- `tests/support/orchestration.py` — orchestration-module doubles (projection /
-  log replay).
-- `tests/support/clock.py` — a deterministic `Clock` double so scheduling tests
-  avoid wall-clock `time.sleep` (heuristic 7).
+  `SessionRepository` and an `EventStore`) and `FakeProvisioner` (records
+  workspace creation and resource materialization calls).
+- `tests/support/orchestration.py` — orchestration-module doubles that script
+  complex orchestration behavior without hitting real Git or network services:
+  - `FakeGitInspector` — scripts baseline SHA and `GitResult` inspection; lets
+    tests verify git-result events without touching a real repo.
+  - `FakeModelCatalog` — scripts the model catalog discovery response; tests
+    assert on `InvalidModelError` for unknown models without network calls.
+  - `FakeTaskQueue` — scripts per-session queued and in-flight task state; used
+    by workflow and rate-limit tests.
+- `tests/support/clock.py` — a deterministic `FakeClock` double so scheduling
+  tests advance time manually instead of wall-clock `time.sleep` (heuristic 7).
 
 `tests/conftest.py` wires these into shared fixtures — `fake_launcher` (a
 `ScriptedLauncher`), `client` (a `TestClient` built via
-`create_app(launcher_factory=...)`), and `bare_repo` (a local git bare repo
-used as a clone source). Tests inject doubles through `create_app(...)`'s
-injectable defaults rather than monkey-patching production modules.
+`create_app(launcher_factory=...)`), `bare_repo` (a local git bare repo used as
+a clone source), `tmp_sessions_dir` (redirects the session log), and
+`tmp_workspaces_dir` (redirects workspace paths to isolate tests). Tests inject
+doubles through `create_app(...)`'s injectable defaults rather than
+monkey-patching production modules.

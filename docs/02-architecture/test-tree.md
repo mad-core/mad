@@ -23,6 +23,7 @@ tests/
 │   │   │   └── test_jsonl_event_log_query.py
 │   │   ├── orchestration/
 │   │   │   ├── __init__.py
+│   │   │   ├── test_git_inspector.py
 │   │   │   └── test_projection.py
 │   │   ├── providers/
 │   │   │   ├── __init__.py
@@ -54,7 +55,8 @@ tests/
 │   │   ├── test_sessions_http.py
 │   │   ├── test_sessions_timeout_http.py
 │   │   ├── test_sessions_timestamps_http.py
-│   │   └── test_sessions_working_directory.py
+│   │   ├── test_sessions_working_directory.py
+│   │   └── test_workflows_http.py
 │   ├── cli/
 │   │   ├── __init__.py
 │   │   └── test_serve_entrypoint.py
@@ -65,7 +67,8 @@ tests/
 │   │   ├── test_dispatcher_dst.py
 │   │   ├── test_rate_limit_retry.py
 │   │   ├── test_rate_limit_retry_work_window.py
-│   │   └── test_startup_rehydration.py
+│   │   ├── test_startup_rehydration.py
+│   │   └── test_workflow_coordinator.py
 │   ├── packaging/
 │   │   ├── __init__.py
 │   │   └── test_sdist_completeness.py
@@ -118,9 +121,11 @@ tests/
 │   │   │   ├── domain/
 │   │   │   │   ├── __init__.py
 │   │   │   │   ├── test_dispatch_policy.py
+│   │   │   │   ├── test_git_result.py
 │   │   │   │   ├── test_ordering.py
 │   │   │   │   ├── test_retry_schedule.py
-│   │   │   │   └── test_task.py
+│   │   │   │   ├── test_task.py
+│   │   │   │   └── test_workflow.py
 │   │   │   ├── use_cases/
 │   │   │   │   ├── __init__.py
 │   │   │   │   ├── test_cancel_task.py
@@ -137,7 +142,9 @@ tests/
 │   │   │   │   ├── test_rehydrate_pending_sessions.py
 │   │   │   │   ├── test_trigger_manual_dispatch.py
 │   │   │   │   ├── test_update_dispatch_policy.py
-│   │   │   │   └── test_update_dispatch_priority.py
+│   │   │   │   ├── test_update_dispatch_priority.py
+│   │   │   │   ├── test_workflow_coordinator.py
+│   │   │   │   └── test_workflow_coordinator_refs.py
 │   │   │   └── __init__.py
 │   │   ├── sessions/
 │   │   │   ├── domain/
@@ -157,6 +164,7 @@ tests/
 │   │   │   │   ├── test_list_sessions.py
 │   │   │   │   └── test_send_user_message.py
 │   │   │   ├── __init__.py
+│   │   │   ├── test_credentials.py
 │   │   │   └── test_store.py
 │   │   └── __init__.py
 │   ├── orchestration/
