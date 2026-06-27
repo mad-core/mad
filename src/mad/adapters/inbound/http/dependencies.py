@@ -13,6 +13,9 @@ from mad.adapters.outbound.events.in_memory_event_bus import InMemoryEventBus
 from mad.adapters.outbound.events.jsonl_event_log_query import JsonlEventLogQuery
 from mad.adapters.outbound.orchestration.projection import InMemoryTaskProjection
 from mad.adapters.outbound.orchestration.system_clock import SystemClock
+from mad.adapters.outbound.orchestration.workflow_projection import (
+    InMemoryWorkflowProjection,
+)
 from mad.adapters.outbound.persistence.jsonl_session_repository import (
     JsonlSessionRepository,
 )
@@ -46,6 +49,7 @@ def build_dependencies() -> tuple[
     ModelCatalog,
     DeploymentModelConfig,
     DeploymentEffortConfig,
+    InMemoryWorkflowProjection,
 ]:
     """Return the production defaults for every injected port."""
     store = SessionStore()
@@ -57,6 +61,7 @@ def build_dependencies() -> tuple[
     deployment_policy = DeploymentDispatchPolicy()
     deployment_model_config = DeploymentModelConfig()
     deployment_effort_config = DeploymentEffortConfig()
+    workflow_projection = InMemoryWorkflowProjection()
     return (
         store,
         repo,
@@ -70,6 +75,7 @@ def build_dependencies() -> tuple[
         ModelCatalogAdapter(),
         deployment_model_config,
         deployment_effort_config,
+        workflow_projection,
     )
 
 

@@ -112,6 +112,15 @@ class EnqueueTaskRequest(BaseModel):
             " or deployment default."
         ),
     )
+    effort: str | None = Field(
+        default=None,
+        description=(
+            "Optional reasoning-effort for this task. Overrides the session and"
+            " deployment effort defaults when set. ``null`` (default) inherits from"
+            " the session or deployment default. Forwarded verbatim to the launcher"
+            " (``--effort`` for claude, ``--variant`` for opencode); never validated."
+        ),
+    )
     conversation_mode: Literal["new", "resume"] = Field(
         default="new",
         description=(
@@ -145,6 +154,7 @@ class TaskResponse(BaseModel):
     scheduled_for: str
     created_at: datetime
     model: str | None = None
+    effort: str | None = None
     conversation_mode: Literal["new", "resume"] = "new"
     status: Literal["dispatched", "retrying"] = Field(
         default="dispatched",
@@ -350,6 +360,7 @@ async def enqueue_task(
             content=payload.content,
             scheduled_for=payload.scheduled_for,
             model=payload.model,
+            effort=payload.effort,
             conversation_mode=payload.conversation_mode,
         )
     )
@@ -391,6 +402,7 @@ async def list_tasks(session_id: str, request: Request) -> ListTasksResponse:
                 scheduled_for=t.scheduled_for,
                 created_at=t.created_at,
                 model=t.model,
+                effort=t.effort,
                 conversation_mode=t.conversation_mode,
             )
             for t in output.queued
@@ -403,6 +415,7 @@ async def list_tasks(session_id: str, request: Request) -> ListTasksResponse:
                 scheduled_for=output.in_flight.scheduled_for,
                 created_at=output.in_flight.created_at,
                 model=output.in_flight.model,
+                effort=output.in_flight.effort,
                 conversation_mode=output.in_flight.conversation_mode,
                 status="retrying" if ri is not None else "dispatched",
                 retry_info=ri,

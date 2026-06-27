@@ -311,7 +311,7 @@ Run it as another supervisor unit, then update the tunnel ingress to point at po
 
 ### Request body privacy
 
-`POST /v1/sessions` carries `authorization_token` for the GitHub clone in the body. The body transits TLS-encrypted to Cloudflare's edge, then through the tunnel. Cloudflare's defaults do not log request bodies, but verify your account's Logpush / HTTP Request Logging settings. Even with that confirmed, treat any GitHub token you send through the tunnel as observable by Cloudflare; rotate them on a schedule.
+Prefer sourcing the GitHub clone credential from the host `GITHUB_TOKEN` / `GH_TOKEN` environment variable (issue #89) so no secret transits the tunnel at all. The legacy inline `authorization_token` on `POST /v1/sessions` is **deprecated** (removal target v0.6.0); if you still send it, the body transits TLS-encrypted to Cloudflare's edge, then through the tunnel. Cloudflare's defaults do not log request bodies, but verify your account's Logpush / HTTP Request Logging settings. Even with that confirmed, treat any GitHub token you send through the tunnel as observable by Cloudflare; rotate them on a schedule — another reason to use the host env var instead.
 
 Mad-side, hard rule 2 strips tokens from the workspace `git remote` and redacts them in the JSONL event log — that is unchanged by tunneling.
 

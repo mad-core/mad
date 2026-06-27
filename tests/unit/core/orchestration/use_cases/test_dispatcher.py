@@ -38,6 +38,7 @@ from mad.core.orchestration.domain.dispatch_policy import (
     WorkWindowPolicy,
 )
 from mad.core.orchestration.domain.exceptions.rate_limit import RateLimitError
+from mad.core.orchestration.domain.git_result import Commit, GitResult
 from mad.core.orchestration.domain.task import Task
 from mad.core.orchestration.use_cases.dispatcher import Dispatcher
 from mad.core.orchestration.use_cases.enqueue_task import (
@@ -48,6 +49,7 @@ from mad.core.sessions.domain.entities.session import Session
 from support.clock import FakeClock
 from support.events import FakeEventBus, FakeEventStore
 from support.launchers import RaisingLauncher, ScriptedLauncher
+from support.orchestration import FakeGitInspector
 
 _DEADLINE_S = 2.0
 
@@ -104,6 +106,7 @@ class _Harness:
         clock: FakeClock | None = None,
         tick_interval_s: float = 0.05,
         deployment: DeploymentDispatchPolicy | None = None,
+        git_inspector: Any | None = None,
     ) -> None:
         self.store = FakeEventStore()
         self.bus = FakeEventBus()
@@ -122,6 +125,7 @@ class _Harness:
             clock=clock,
             tick_interval_s=tick_interval_s,
             deployment_policy=deployment,
+            git_inspector=git_inspector,
         )
         self.enqueue = EnqueueTaskUseCase(sessions_index=sessions, emitter=self.emitter)
 
@@ -206,6 +210,74 @@ async def test_two_queued_tasks_run_sequentially_not_in_parallel(
         a_completed_idx = all_types.index(("task.completed", str(a.task_id)))
         b_dispatched_idx = all_types.index(("task.dispatched", str(b.task_id)))
         assert a_completed_idx < b_dispatched_idx
+    finally:
+        await h.stop()
+
+
+# -- Per-task effort forwarding (issue #81) -----------------------------------
+
+
+async def test_per_task_effort_is_forwarded_to_launcher(tmp_path: Path) -> None:
+    """A task's ``effort`` reaches the launcher at dispatch time (AC c)."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    sessions = {"sesn_a": _session("sesn_a", workspace)}
+    launcher = ScriptedLauncher()
+    _scripted_two_runs(launcher)
+    h = _Harness(sessions, launcher)
+    await h.start()
+    try:
+        await h.enqueue.execute(
+            EnqueueTaskInput(session_id="sesn_a", content="security review", effort="high")
+        )
+        await _wait_for_event_type(h.store, session_id="sesn_a", event_type="task.completed")
+
+        # The primary launcher run received the task-level effort.
+        assert launcher.calls[0]["effort"] == "high"
+    finally:
+        await h.stop()
+
+
+async def test_task_effort_overrides_session_effort_at_dispatch(tmp_path: Path) -> None:
+    """task > session precedence is applied by the dispatcher: the task value
+    wins over the session's own effort (AC b)."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    session = _session("sesn_a", workspace)
+    session.effort = "low"
+    sessions = {"sesn_a": session}
+    launcher = ScriptedLauncher()
+    _scripted_two_runs(launcher)
+    h = _Harness(sessions, launcher)
+    await h.start()
+    try:
+        await h.enqueue.execute(
+            EnqueueTaskInput(session_id="sesn_a", content="migration", effort="xhigh")
+        )
+        await _wait_for_event_type(h.store, session_id="sesn_a", event_type="task.completed")
+
+        assert launcher.calls[0]["effort"] == "xhigh"
+    finally:
+        await h.stop()
+
+
+async def test_session_effort_used_when_task_has_no_effort(tmp_path: Path) -> None:
+    """Negative twin: a task with no effort inherits the session level — the
+    dispatcher never substitutes a default (AC d)."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    session = _session("sesn_a", workspace)
+    session.effort = "low"
+    sessions = {"sesn_a": session}
+    launcher = ScriptedLauncher()
+    _scripted_two_runs(launcher)
+    h = _Harness(sessions, launcher)
+    await h.start()
+    try:
+        await h.enqueue.execute(EnqueueTaskInput(session_id="sesn_a", content="docs"))
+        await _wait_for_event_type(h.store, session_id="sesn_a", event_type="task.completed")
+
+        assert launcher.calls[0]["effort"] == "low"
     finally:
         await h.stop()
 
@@ -741,3 +813,156 @@ def test_window_closed_false_when_open_or_non_window_or_no_clock(tmp_path: Path)
     noclock_session.dispatch_policy = window
     h_noclock = _Harness({"sesn_c": noclock_session}, ScriptedLauncher())  # clock=None
     assert h_noclock.dispatcher._window_closed(noclock_session) is False
+
+
+# -- task.git_result capture (issue #88) --------------------------------------
+
+
+def _git_result_event(store: FakeEventStore, session_id: str) -> dict[str, Any] | None:
+    for c in store.calls:
+        if c[0] == session_id and c[1] == "task.git_result":
+            return c[2]
+    return None
+
+
+async def test_completed_task_emits_git_result_after_completed(tmp_path: Path) -> None:
+    """A wired inspector turns a completed task into a ``task.git_result``
+    event carrying the captured baseline, branch, commits, and flags — emitted
+    AFTER ``task.completed`` (issue #88)."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    sessions = {"sesn_a": _session("sesn_a", workspace)}
+    launcher = ScriptedLauncher()
+    _scripted_two_runs(launcher)
+    result = GitResult(
+        base_sha="base000",
+        head_branch="feat/x",
+        head_sha="head111",
+        commits=(Commit(sha="head111", subject="did work"),),
+        dirty=False,
+        pushed=True,
+    )
+    inspector = FakeGitInspector(base_sha="base000", result=result)
+    h = _Harness(sessions, launcher, git_inspector=inspector)
+    await h.start()
+    try:
+        output = await h.enqueue.execute(EnqueueTaskInput(session_id="sesn_a", content="hello"))
+        await _wait_for_event_type(h.store, session_id="sesn_a", event_type="task.git_result")
+
+        types = _types_for_session(h.store, "sesn_a")
+        assert types.index("task.completed") < types.index("task.git_result")
+
+        data = _git_result_event(h.store, "sesn_a")
+        assert data == {
+            "task_id": str(output.task_id),
+            "base_sha": "base000",
+            "head_branch": "feat/x",
+            "head_sha": "head111",
+            "commits": [{"sha": "head111", "subject": "did work"}],
+            "dirty": False,
+            "pushed": True,
+        }
+        # The baseline was captured against the launcher's working directory.
+        assert inspector.inspect_calls == [(Path(workspace), "base000")]
+    finally:
+        await h.stop()
+
+
+async def test_completed_task_with_no_commits_still_emits_git_result(
+    tmp_path: Path,
+) -> None:
+    """Negative twin: a task that created no commits emits a
+    ``task.git_result`` with an empty commit list — not a missing event
+    (issue #88 AC)."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    sessions = {"sesn_a": _session("sesn_a", workspace)}
+    launcher = ScriptedLauncher()
+    _scripted_two_runs(launcher)
+    result = GitResult(
+        base_sha="base000",
+        head_branch="main",
+        head_sha="base000",
+        commits=(),
+        dirty=False,
+        pushed=False,
+    )
+    h = _Harness(sessions, launcher, git_inspector=FakeGitInspector(result=result))
+    await h.start()
+    try:
+        await h.enqueue.execute(EnqueueTaskInput(session_id="sesn_a", content="noop"))
+        await _wait_for_event_type(h.store, session_id="sesn_a", event_type="task.git_result")
+
+        data = _git_result_event(h.store, "sesn_a")
+        assert data is not None
+        assert data["commits"] == []
+    finally:
+        await h.stop()
+
+
+async def test_no_git_result_when_inspector_unwired(tmp_path: Path) -> None:
+    """Negative twin: with no inspector (the default), a completed task emits
+    no ``task.git_result`` — capture is strictly opt-in."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    sessions = {"sesn_a": _session("sesn_a", workspace)}
+    launcher = ScriptedLauncher()
+    _scripted_two_runs(launcher)
+    h = _Harness(sessions, launcher)  # git_inspector=None
+    await h.start()
+    try:
+        await h.enqueue.execute(EnqueueTaskInput(session_id="sesn_a", content="hello"))
+        await _wait_for_event_type(h.store, session_id="sesn_a", event_type="task.completed")
+        # Give any (erroneous) git-result emission a chance to land.
+        await asyncio.sleep(0.05)
+
+        assert "task.git_result" not in _types_for_session(h.store, "sesn_a")
+    finally:
+        await h.stop()
+
+
+async def test_git_result_omitted_when_inspection_returns_none(tmp_path: Path) -> None:
+    """Negative twin: an inspector that returns None (non-git workspace) omits
+    the event but the task still completes — git inspection never fails the
+    task (issue #88 AC)."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    sessions = {"sesn_a": _session("sesn_a", workspace)}
+    launcher = ScriptedLauncher()
+    _scripted_two_runs(launcher)
+    h = _Harness(sessions, launcher, git_inspector=FakeGitInspector(result=None))
+    await h.start()
+    try:
+        await h.enqueue.execute(EnqueueTaskInput(session_id="sesn_a", content="hello"))
+        await _wait_for_event_type(h.store, session_id="sesn_a", event_type="task.completed")
+        await asyncio.sleep(0.05)
+
+        types = _types_for_session(h.store, "sesn_a")
+        assert "task.completed" in types
+        assert "task.git_result" not in types
+    finally:
+        await h.stop()
+
+
+async def test_failing_inspector_does_not_fail_the_task(tmp_path: Path) -> None:
+    """A raising inspector is swallowed: the task still reaches
+    ``task.completed`` and no ``task.failed`` is emitted (issue #88 AC:
+    failure to read git state does not fail the task)."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    sessions = {"sesn_a": _session("sesn_a", workspace)}
+    launcher = ScriptedLauncher()
+    _scripted_two_runs(launcher)
+    h = _Harness(sessions, launcher, git_inspector=FakeGitInspector(raises=True))
+    await h.start()
+    try:
+        await h.enqueue.execute(EnqueueTaskInput(session_id="sesn_a", content="hello"))
+        await _wait_for_event_type(h.store, session_id="sesn_a", event_type="task.completed")
+        await asyncio.sleep(0.05)
+
+        types = _types_for_session(h.store, "sesn_a")
+        assert "task.completed" in types
+        assert "task.git_result" not in types
+        assert "task.failed" not in types
+    finally:
+        await h.stop()

@@ -27,6 +27,7 @@ class EnqueueTaskInput:
     content: str
     scheduled_for: str = "now"
     model: str | None = None
+    effort: str | None = None
     conversation_mode: Literal["new", "resume"] = "new"
 
 
@@ -71,6 +72,7 @@ class EnqueueTaskUseCase:
                 "content": payload.content,
                 "scheduled_for": payload.scheduled_for,
                 "model": payload.model,
+                "effort": payload.effort,
                 "conversation_mode": payload.conversation_mode,
             },
         )

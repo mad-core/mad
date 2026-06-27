@@ -7,7 +7,46 @@ real projection or replaying a JSONL log.
 
 from __future__ import annotations
 
+from pathlib import Path
+
+from mad.core.orchestration.domain.git_result import GitResult
 from mad.core.orchestration.domain.task import Task
+
+
+class FakeGitInspector:
+    """In-memory ``GitInspector`` double (issue #88).
+
+    Tests script the baseline SHA returned at dispatch and the
+    :class:`GitResult` (or ``None``) returned at completion, then assert on
+    the resulting ``task.git_result`` event without touching a real git repo.
+    Set ``result`` to ``None`` to exercise the graceful-omission path; set
+    ``raises`` to verify a failing inspector never fails the task.
+    """
+
+    def __init__(
+        self,
+        *,
+        base_sha: str | None = "base000",
+        result: GitResult | None = None,
+        raises: bool = False,
+    ) -> None:
+        self._base_sha = base_sha
+        self._result = result
+        self._raises = raises
+        self.read_head_sha_calls: list[Path] = []
+        self.inspect_calls: list[tuple[Path, str | None]] = []
+
+    async def read_head_sha(self, workspace: Path) -> str | None:
+        self.read_head_sha_calls.append(workspace)
+        if self._raises:
+            raise RuntimeError("git read_head_sha boom")
+        return self._base_sha
+
+    async def inspect(self, workspace: Path, base_sha: str | None) -> GitResult | None:
+        self.inspect_calls.append((workspace, base_sha))
+        if self._raises:
+            raise RuntimeError("git inspect boom")
+        return self._result
 
 
 class FakeModelCatalog:

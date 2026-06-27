@@ -34,6 +34,10 @@ class FakeProvisioner:
         self.destroyed: list[str] = []
         self.files_written: list[tuple[str, str]] = []
         self.repos_cloned: list[tuple[str, str, str | None]] = []
+        # Effective clone token passed per github_repository call, in order
+        # (None when neither inline nor host env supplied one). Kept separate
+        # from ``repos_cloned`` so existing positional assertions stay valid.
+        self.cloned_tokens: list[str | None] = []
 
     def create(self, session_id: str) -> Path:
         self.created.append(session_id)
@@ -55,6 +59,7 @@ class FakeProvisioner:
         base_branch: str | None = None,
     ) -> None:
         self.repos_cloned.append((mount_path, repo_url, base_branch))
+        self.cloned_tokens.append(token)
 
     def materialize_file(self, workspace: Path, mount_path: str, content: str) -> None:
         self.files_written.append((mount_path, content))

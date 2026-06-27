@@ -7,9 +7,10 @@ the effort flag" (``--effort`` for claude, ``--variant`` for opencode) so the
 provider uses its own default — Mad imposes no opinion and never enumerates or
 validates effort values (opaque pass-through for v1).
 
-Precedence is session > deployment only — there is no task-level effort
-(out of scope, issue #60). This is deliberately narrower than
-``resolve_effective_model``'s four levels.
+Precedence is task > session > deployment (issue #81) — symmetric with
+``resolve_effective_model``. A per-task override lets one session's dispatch
+queue mix effort levels (cheap docs task vs. high-effort migration) without
+opening a session per level.
 """
 
 from __future__ import annotations
@@ -34,17 +35,18 @@ class DeploymentEffortConfig:
 
 
 def resolve_effective_effort(
+    task_effort: str | None,
     session_effort: str | None,
     deployment_default: str | None,
 ) -> str | None:
-    """Precedence: session > deployment > None.
+    """Precedence: task > session > deployment > None.
 
-    Returns the first non-None value, or None if both levels are unset
+    Returns the first non-None value, or None if every level is unset
     (meaning: omit the effort flag and let the provider pick its own default).
-    Unlike ``resolve_effective_model`` there is no task or machine level —
-    effort precedence is session + deployment only (issue #60, out of scope).
+    Mirror of ``resolve_effective_model`` minus the machine level — the
+    launcher pass-through has no per-machine effort default (issue #81).
     """
-    for candidate in (session_effort, deployment_default):
+    for candidate in (task_effort, session_effort, deployment_default):
         if candidate is not None:
             return candidate
     return None

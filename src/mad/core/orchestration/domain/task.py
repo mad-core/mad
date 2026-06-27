@@ -37,4 +37,5 @@ class Task:
     scheduled_for: str
     created_at: datetime
     model: str | None = None
+    effort: str | None = None
     conversation_mode: Literal["new", "resume"] = "new"

@@ -332,6 +332,8 @@ async def test_tool_surface_is_the_full_request_response_route_set(client: TestC
             "mad_set_deployment_dispatch_policy",
             "mad_set_session_priority",
             "mad_get_queue",
+            "mad_create_workflow",
+            "mad_get_workflow",
             "mad_query_events",
             "mad_list_provider_models",
             "mad_get_deployment_model",

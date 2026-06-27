@@ -66,6 +66,13 @@ from mad.adapters.inbound.http.routes.sessions import (
     SessionSummaryResponse,
     _as_utc,
 )
+from mad.adapters.inbound.http.routes.workflows import (
+    CreateWorkflowRequest,
+    CreateWorkflowResponse,
+    WorkflowStatusResponse,
+    WorkflowStepStatusResponse,
+    _to_domain_step,
+)
 from mad.core.events.emitter import EventEmitter
 from mad.core.events.ports.event_log_query import EventLogQuery
 from mad.core.events.use_cases.query_events import QueryEventsInput, QueryEventsUseCase
@@ -79,6 +86,10 @@ from mad.core.orchestration.use_cases.cancel_task import CancelTaskInput, Cancel
 from mad.core.orchestration.use_cases.clear_dispatch_policy import (
     ClearDispatchPolicyInput,
     ClearDispatchPolicyUseCase,
+)
+from mad.core.orchestration.use_cases.create_workflow import (
+    CreateWorkflowInput,
+    CreateWorkflowUseCase,
 )
 from mad.core.orchestration.use_cases.deployment_dispatch_policy import (
     GetDeploymentDispatchPolicyUseCase,
@@ -101,6 +112,7 @@ from mad.core.orchestration.use_cases.deployment_model_config import (
 )
 from mad.core.orchestration.use_cases.enqueue_task import EnqueueTaskInput, EnqueueTaskUseCase
 from mad.core.orchestration.use_cases.get_global_queue import GetGlobalQueueUseCase
+from mad.core.orchestration.use_cases.get_workflow import GetWorkflowUseCase
 from mad.core.orchestration.use_cases.list_provider_models import ListProviderModelsUseCase
 from mad.core.orchestration.use_cases.list_tasks import ListTasksUseCase
 from mad.core.orchestration.use_cases.trigger_manual_dispatch import (
@@ -180,6 +192,7 @@ def build_mcp_server(
     model_catalog: ModelCatalog,
     deployment_model_config: DeploymentModelConfig,
     deployment_effort_config: DeploymentEffortConfig,
+    workflow_read_model: object,
 ) -> FastMCP:
     """Build the FastMCP server bound to the supplied in-process dependencies.
 
@@ -390,6 +403,7 @@ def build_mcp_server(
                 content=payload.content,
                 scheduled_for=payload.scheduled_for,
                 model=payload.model,
+                effort=payload.effort,
                 conversation_mode=payload.conversation_mode,
             )
         )
@@ -417,6 +431,7 @@ def build_mcp_server(
                     scheduled_for=t.scheduled_for,
                     created_at=t.created_at,
                     model=t.model,
+                    effort=t.effort,
                     conversation_mode=t.conversation_mode,
                 )
                 for t in output.queued
@@ -429,6 +444,7 @@ def build_mcp_server(
                     scheduled_for=output.in_flight.scheduled_for,
                     created_at=output.in_flight.created_at,
                     model=output.in_flight.model,
+                    effort=output.in_flight.effort,
                     conversation_mode=output.in_flight.conversation_mode,
                     status="retrying" if ri is not None else "dispatched",
                     retry_info=ri,
@@ -568,6 +584,45 @@ def build_mcp_server(
             in_flight=_queue_task_entry(output.in_flight) if output.in_flight else None,
             ready=[_queue_task_entry(e) for e in output.ready],
             scheduled=[_scheduled_task_entry(e) for e in output.scheduled],
+        )
+
+    # -- Orchestration: workflows (issue #90) ---------------------------------
+
+    @mcp.tool(
+        name="mad_create_workflow",
+        description="Create a workflow: a DAG of steps where each step is a "
+        "session + task, held unqueued until all its depends_on predecessors "
+        "complete. A step's github mount may inherit a predecessor's repo via "
+        "from_step. Returns the workflow id and status. Mirrors POST /v1/workflows.",
+    )
+    async def mad_create_workflow(payload: CreateWorkflowRequest) -> CreateWorkflowResponse:
+        steps = tuple(_to_domain_step(s) for s in payload.steps)
+        use_case = CreateWorkflowUseCase(emitter=event_emitter)
+        output = await use_case.execute(CreateWorkflowInput(steps=steps))
+        return CreateWorkflowResponse(workflow_id=output.workflow_id, status=output.status)
+
+    @mcp.tool(
+        name="mad_get_workflow",
+        description="Read a workflow's status (pending / running / completed / "
+        "failed) and per-step status. Raises if the workflow id is unknown. "
+        "Mirrors GET /v1/workflows/{workflow_id}.",
+    )
+    def mad_get_workflow(workflow_id: str) -> WorkflowStatusResponse:
+        use_case = GetWorkflowUseCase(read_model=workflow_read_model)  # type: ignore[arg-type]
+        snapshot = use_case.execute(workflow_id)
+        return WorkflowStatusResponse(
+            workflow_id=snapshot.workflow_id,
+            status=snapshot.status,  # type: ignore[arg-type]
+            steps=[
+                WorkflowStepStatusResponse(
+                    step_id=s.step_id,
+                    status=s.status,  # type: ignore[arg-type]
+                    depends_on=list(s.depends_on),
+                    session_id=s.session_id,
+                    reason=s.reason,
+                )
+                for s in snapshot.steps
+            ],
         )
 
     # -- Providers: model discovery (issue #55) --------------------------------

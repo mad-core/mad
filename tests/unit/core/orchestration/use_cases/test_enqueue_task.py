@@ -62,6 +62,7 @@ async def test_enqueues_task_emits_task_queued_with_full_payload() -> None:
         "content": "fix issue #42",
         "scheduled_for": "now",
         "model": None,
+        "effort": None,
         "conversation_mode": "new",
     }
 
@@ -84,8 +85,39 @@ async def test_passes_through_explicit_scheduled_for() -> None:
         "content": "overnight job",
         "scheduled_for": "next_window",
         "model": None,
+        "effort": None,
         "conversation_mode": "new",
     }
+
+
+async def test_records_per_task_effort_on_task_queued_event() -> None:
+    """A per-task ``effort`` is recorded verbatim on the ``task.queued`` event
+    so the dispatcher can resolve it later (issue #81)."""
+    use_case, store, _ = _make_use_case()
+
+    output = await use_case.execute(
+        EnqueueTaskInput(session_id="sesn_a", content="security review", effort="high")
+    )
+
+    assert store.calls[-1][2] == {
+        "task_id": str(output.task_id),
+        "content": "security review",
+        "scheduled_for": "now",
+        "model": None,
+        "effort": "high",
+        "conversation_mode": "new",
+    }
+
+
+async def test_omitted_effort_is_recorded_as_none() -> None:
+    """Negative twin: when no effort is supplied the event carries ``None``
+    (inherit from session/deployment), never a default level."""
+    use_case, store, _ = _make_use_case()
+
+    output = await use_case.execute(EnqueueTaskInput(session_id="sesn_a", content="docs"))
+
+    assert store.calls[-1][2]["effort"] is None
+    assert store.calls[-1][2]["task_id"] == str(output.task_id)
 
 
 async def test_rejects_unknown_session_with_session_not_found() -> None:

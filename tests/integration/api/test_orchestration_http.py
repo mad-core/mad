@@ -31,7 +31,13 @@ def _create_session(client: TestClient, session_payload: dict) -> str:
     return r.json()["session_id"]
 
 
-def _inject_queued(client: TestClient, session_id: str, *, content: str = "queued work") -> Task:
+def _inject_queued(
+    client: TestClient,
+    session_id: str,
+    *,
+    content: str = "queued work",
+    effort: str | None = None,
+) -> Task:
     """Place a Task directly on the projection's queued list.
 
     The projection adapter is in-process (in-memory), so this is the
@@ -45,6 +51,7 @@ def _inject_queued(client: TestClient, session_id: str, *, content: str = "queue
         content=content,
         scheduled_for="now",
         created_at=datetime(2026, 5, 8, tzinfo=UTC),
+        effort=effort,
     )
     projection._queued.setdefault(session_id, []).append(task)
     return task
@@ -93,6 +100,43 @@ def test_post_tasks_passes_through_explicit_scheduled_for(
 
     assert r.status_code == 202
     assert r.json()["scheduled_for"] == "next_window"
+
+
+def test_post_tasks_accepts_per_task_effort(client: TestClient, session_payload: dict) -> None:
+    """POST accepts an ``effort`` for the task (issue #81, AC a). The value is
+    opaque pass-through — any string is accepted, never validated."""
+    session_id = _create_session(client, session_payload)
+
+    r = client.post(
+        f"/v1/sessions/{session_id}/tasks",
+        json={"content": "security review", "effort": "high"},
+    )
+
+    assert r.status_code == 202, r.text
+    assert r.json()["status"] == "queued"
+
+
+def test_get_tasks_returns_per_task_effort(client: TestClient, session_payload: dict) -> None:
+    """GET surfaces the per-task ``effort`` on the queued entry (AC e)."""
+    session_id = _create_session(client, session_payload)
+    _inject_queued(client, session_id, content="migration", effort="xhigh")
+
+    r = client.get(f"/v1/sessions/{session_id}/tasks")
+
+    assert r.status_code == 200
+    assert r.json()["queued"][0]["effort"] == "xhigh"
+
+
+def test_get_tasks_effort_is_null_when_unset(client: TestClient, session_payload: dict) -> None:
+    """Negative twin: a task enqueued without an effort surfaces ``null``
+    (inherit), never a default level (AC d)."""
+    session_id = _create_session(client, session_payload)
+    _inject_queued(client, session_id, content="docs")
+
+    r = client.get(f"/v1/sessions/{session_id}/tasks")
+
+    assert r.status_code == 200
+    assert r.json()["queued"][0]["effort"] is None
 
 
 def test_post_tasks_unknown_session_returns_404(client: TestClient) -> None:
@@ -229,6 +273,9 @@ def test_openapi_documents_the_three_orchestration_routes(client: TestClient) ->
     body_schema = spec["components"]["schemas"][body_ref.rsplit("/", 1)[-1]]
     assert body_schema["properties"]["content"]["type"] == "string"
     assert body_schema["properties"]["scheduled_for"]["type"] == "string"
+    # Per-task effort (issue #81): optional nullable string, never required.
+    assert "effort" in body_schema["properties"]
+    assert "effort" not in body_schema["required"]
     assert body_schema["required"] == ["content"]
     assert "202" in post["responses"]
 

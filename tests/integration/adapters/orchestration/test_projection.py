@@ -39,6 +39,7 @@ def _event(
     task_id: UUID | None = None,
     content: str = "opaque",
     scheduled_for: str = "now",
+    effort: str | None = None,
     reason: str | None = None,
     timestamp: datetime | None = None,
     event_id: UUID | None = None,
@@ -50,6 +51,7 @@ def _event(
     if type == "task.queued":
         data["content"] = content
         data["scheduled_for"] = scheduled_for
+        data["effort"] = effort
     if reason is not None:
         data["reason"] = reason
     if seq is not None:
@@ -81,6 +83,37 @@ def test_task_queued_appears_in_queued_list_in_insertion_order() -> None:
     assert [t.task_id for t in queued] == [a, b]
     assert [t.content for t in queued] == ["first", "second"]
     assert proj.in_flight("sesn_a") is None
+
+
+def test_task_queued_rehydrates_per_task_effort() -> None:
+    """A ``task.queued`` carrying ``effort`` rehydrates it onto the Task entity
+    so the dispatcher can resolve task-level precedence (issue #81)."""
+    proj = InMemoryTaskProjection()
+    a = uuid4()
+
+    proj.apply(_event(type="task.queued", session_id="sesn_a", task_id=a, effort="high"))
+
+    queued = proj.queued("sesn_a")
+    assert [t.effort for t in queued] == ["high"]
+
+
+def test_task_queued_without_effort_rehydrates_as_none() -> None:
+    """Negative twin: a ``task.queued`` with no ``effort`` key (legacy events
+    pre-#81) rehydrates to None — inherit, never a default level."""
+    proj = InMemoryTaskProjection()
+    a = uuid4()
+
+    # Build a task.queued event with NO effort key at all (legacy shape).
+    legacy = Event(
+        event_id=uuid4(),
+        session_id="sesn_a",
+        type="task.queued",
+        data={"task_id": str(a), "content": "legacy", "scheduled_for": "now"},
+        timestamp=datetime(2026, 5, 8, tzinfo=UTC),
+    )
+    proj.apply(legacy)
+
+    assert proj.queued("sesn_a")[0].effort is None
 
 
 def test_task_dispatched_moves_task_from_queued_to_in_flight() -> None:
