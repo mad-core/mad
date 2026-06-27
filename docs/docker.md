@@ -191,27 +191,29 @@ accounts, log in again (or clear `./instances/<name>/claude`).
 
 ### GitHub token
 
-There are **two distinct** GitHub-token paths — keep them straight:
+The GitHub PAT is configured **per instance, in the environment** — read as
+`GITHUB_TOKEN` (with `GH_TOKEN` accepted as an alias). Set it in `.env`:
 
-1. **Clone token (per request).** The token used to `git clone` a private repo
-   is delivered in the create-session request (`authorization_token` on the
-   GitHub resource mount). Mad uses it for the clone, then **strips it** from
-   the git remote and **redacts** it from the event log and stdout
-   (CLAUDE.md hard rule 2). It is *not* configured here.
+```dotenv
+GITHUB_TOKEN=ghp_xxx
+GH_TOKEN=ghp_xxx
+```
 
-2. **Agent token (per instance, env).** The token the launched agent uses to
-   **push commits and open PRs** comes from the environment, read as
-   `GH_TOKEN` / `GITHUB_TOKEN`. Set it in `.env`:
+`env_file: .env` injects it into the container, where it serves **two** purposes:
 
-   ```dotenv
-   GITHUB_TOKEN=ghp_xxx
-   GH_TOKEN=ghp_xxx
-   ```
+1. **Clone credential.** Mad reads `GITHUB_TOKEN` / `GH_TOKEN` at clone time to
+   `git clone` a private repo, then **strips it** from the git remote and
+   **redacts** it from the event log and stdout (CLAUDE.md hard rule 2, issue
+   #89). Passing the token inline in the create-session request
+   (`authorization_token` on the GitHub resource mount) is **deprecated**
+   (removal target v0.6.0) and triggers a deprecation warning — prefer the env
+   var so no secret transits the API / MCP surface.
 
-   `env_file: .env` injects it into the container, so `git push` / `gh` run by
-   the agent inside the workspace can authenticate. Use a **fine-grained PAT**
-   scoped to only the repos this instance should touch — that scoping is exactly
-   the per-instance isolation Docker buys you.
+2. **Agent push credential.** The same env var lets `git push` / `gh` run by the
+   launched agent inside the workspace authenticate to open PRs.
+
+Use a **fine-grained PAT** scoped to only the repos this instance should touch —
+that scoping is exactly the per-instance isolation Docker buys you.
 
 ### AWS credentials
 

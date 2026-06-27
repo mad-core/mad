@@ -107,7 +107,6 @@ def test_mvp_01b_mixed_resources_provisioned(
                 "type": "github_repository",
                 "url": f"file://{bare_repo}",
                 "mount_path": "/workspace/repo",
-                "authorization_token": "ghp_fake",
             },
             {
                 "type": "file",
@@ -123,6 +122,33 @@ def test_mvp_01b_mixed_resources_provisioned(
     statuses = {m["type"]: m for m in data["resources_mounted"]}
     assert statuses["github_repository"]["status"] == "cloned"
     assert Path(statuses["file"]["local_path"]).read_text() == "task description\n"
+
+
+def test_mvp_01c_clone_failure_without_credential_returns_502(
+    client: TestClient, tmp_path: Path
+) -> None:
+    """Negative twin (#89): an unreachable/private repo with no host credential
+    fails with a clear 502 carrying an actionable GITHUB_TOKEN hint — never a
+    silent anonymous clone. A nonexistent local source keeps the test off the
+    network and away from real GitHub (hard rule 5)."""
+    missing = tmp_path / "nope.git"
+    payload = {
+        "agent": {"name": "a", "system": "", "provider": "fake_scripted"},
+        "resources": [
+            {
+                "type": "github_repository",
+                "url": f"file://{missing}",
+                "mount_path": "/workspace/repo",
+            }
+        ],
+    }
+    r = client.post("/v1/sessions", json=payload)
+    assert r.status_code == 502, f"clone failure must surface as 502, got {r.status_code}"
+    detail = r.json()["detail"]
+    # Pin the clone-failure contract, not merely the word GITHUB_TOKEN: the body
+    # must name the failed clone AND carry the actionable host-env credential hint.
+    assert detail.startswith("git clone failed for")
+    assert "GITHUB_TOKEN" in detail
 
 
 # ---------------------------------------------------------------------------

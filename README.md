@@ -70,7 +70,6 @@ curl -sS -X POST http://localhost:8000/v1/sessions \
             "type": "github_repository",
             "url": "https://github.com/octocat/Hello-World.git",
             "mount_path": "/workspace/repo",
-            "authorization_token": "ghp_xxx",
             "checkout": {"type": "branch", "name": "main"}
           }
         ]
@@ -96,7 +95,7 @@ Each frame on the stream is `id: <uuidv7>\ndata: {…}\n\n` where the JSON objec
 | `session.status_idle` | Agent exited 0 |
 | `session.error` | Agent exited non-zero or timed out |
 
-For private repos, set `authorization_token` on the `github_repository` resource. Mad uses it once for `git clone` and immediately strips it from the remote URL ([hard rule 2](CLAUDE.md)). For historical replay outside SSE, `GET /v1/events?after_event_id=…&limit=…` returns the same shape with a `next_cursor`.
+For private repos, configure the clone credential on the **host** where Mad runs via the standard `GITHUB_TOKEN` (or its `GH_TOKEN` alias) environment variable — not in the request body. Mad reads it at clone time, uses it once for `git clone`, and immediately strips it from the remote URL ([hard rule 2](CLAUDE.md)). The inline `authorization_token` field on the `github_repository` resource is **deprecated** (removal target v0.6.0) and emits a deprecation warning when supplied; prefer the host env var. For historical replay outside SSE, `GET /v1/events?after_event_id=…&limit=…` returns the same shape with a `next_cursor`.
 
 ## Project structure
 

@@ -1,7 +1,8 @@
 """Security tests for the hard rules in CLAUDE.md / specs/infra/requirements.md.
 
 FR-3  — Path traversal: mount_path values that escape the session workspace MUST be rejected.
-FR-2  — Token hygiene: after clone, git remote -v must NOT contain the authorization_token.
+FR-2  — Token hygiene: after clone, git remote -v must NOT contain the clone token
+        (sourced from the host GITHUB_TOKEN / GH_TOKEN env var, #89).
 NFR-2 — Token hygiene is also a non-functional constraint (tokens never persisted).
 """
 
@@ -29,7 +30,6 @@ def test_path_traversal_absolute_escape_is_rejected(client: TestClient, bare_rep
                 "type": "github_repository",
                 "url": f"file://{bare_repo}",
                 "mount_path": "/etc/passwd",
-                "authorization_token": "ghp_x",
             }
         ],
     }
@@ -49,7 +49,6 @@ def test_path_traversal_dotdot_is_rejected(client: TestClient, bare_repo: Path) 
                 "type": "github_repository",
                 "url": f"file://{bare_repo}",
                 "mount_path": "/workspace/../../../../tmp/escape",
-                "authorization_token": "ghp_x",
             }
         ],
     }
@@ -69,7 +68,6 @@ def test_path_traversal_symlink_escape_is_rejected(client: TestClient, bare_repo
                 "type": "github_repository",
                 "url": f"file://{bare_repo}",
                 "mount_path": "/tmp/injected",
-                "authorization_token": "ghp_x",
             }
         ],
     }
@@ -110,7 +108,6 @@ def test_path_traversal_valid_workspace_path_is_accepted(
                 "type": "github_repository",
                 "url": f"file://{bare_repo}",
                 "mount_path": "/workspace/safe/repo",
-                "authorization_token": "ghp_x",
             }
         ],
     }
@@ -129,7 +126,6 @@ def test_path_traversal_root_is_rejected(client: TestClient, bare_repo: Path) ->
                 "type": "github_repository",
                 "url": f"file://{bare_repo}",
                 "mount_path": "/",
-                "authorization_token": "ghp_x",
             }
         ],
     }
@@ -143,9 +139,12 @@ def test_path_traversal_root_is_rejected(client: TestClient, bare_repo: Path) ->
 
 
 @pytest.mark.smoke
-def test_token_stripped_from_remote_after_clone(client: TestClient, bare_repo: Path) -> None:
-    """After cloning, git remote -v must not contain the authorization_token."""
+def test_token_stripped_from_remote_after_clone(
+    client: TestClient, bare_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """After cloning, git remote -v must not contain the host clone token (#89)."""
     token = "ghp_supersecret_TOKEN_12345"
+    monkeypatch.setenv("GITHUB_TOKEN", token)
     payload = {
         "agent": {"name": "a", "system": "", "provider": "fake_scripted"},
         "resources": [
@@ -153,7 +152,6 @@ def test_token_stripped_from_remote_after_clone(client: TestClient, bare_repo: P
                 "type": "github_repository",
                 "url": f"file://{bare_repo}",
                 "mount_path": "/workspace/repo",
-                "authorization_token": token,
             }
         ],
     }
@@ -171,9 +169,12 @@ def test_token_stripped_from_remote_after_clone(client: TestClient, bare_repo: P
 
 
 @pytest.mark.smoke
-def test_token_not_in_session_response(client: TestClient, bare_repo: Path) -> None:
-    """The POST /v1/sessions response body must not echo the authorization_token."""
+def test_token_not_in_session_response(
+    client: TestClient, bare_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The POST /v1/sessions response body must not echo the host clone token (#89)."""
     token = "ghp_response_leak_TEST_99999"
+    monkeypatch.setenv("GITHUB_TOKEN", token)
     payload = {
         "agent": {"name": "a", "system": "", "provider": "fake_scripted"},
         "resources": [
@@ -181,7 +182,6 @@ def test_token_not_in_session_response(client: TestClient, bare_repo: Path) -> N
                 "type": "github_repository",
                 "url": f"file://{bare_repo}",
                 "mount_path": "/workspace/repo",
-                "authorization_token": token,
             }
         ],
     }
@@ -193,12 +193,19 @@ def test_token_not_in_session_response(client: TestClient, bare_repo: Path) -> N
 
 
 def test_token_not_in_stderr_of_launcher(
-    client: TestClient, fake_launcher, bare_repo: Path, tmp_sessions_dir: Path
+    client: TestClient,
+    fake_launcher,
+    bare_repo: Path,
+    tmp_sessions_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """FakeLauncher emits an agent.output event whose data contains the token;
-    the JSONL persisted must NOT contain the token literal. (Hard rule 2)
+    """FakeLauncher emits an agent.output event whose data contains the host
+    clone token; the JSONL persisted must NOT contain the token literal —
+    proving an env-sourced credential is also added to the redaction set (#89,
+    hard rule 2).
     """
     token = "ghp_FAKE_LAUNCHER_TOKEN_secretXYZ"
+    monkeypatch.setenv("GITHUB_TOKEN", token)
     # Script the FakeLauncher to emit the token in an agent.output line
     fake_launcher.script(
         [
@@ -215,7 +222,6 @@ def test_token_not_in_stderr_of_launcher(
                 "type": "github_repository",
                 "url": f"file://{bare_repo}",
                 "mount_path": "/workspace/repo",
-                "authorization_token": token,
             }
         ],
     }

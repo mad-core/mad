@@ -20,6 +20,7 @@ from mad.adapters.outbound.persistence.jsonl_session_repository import (
     purge_expired_logs,
     resolve_retention_days,
 )
+from mad.adapters.outbound.persistence.local_workspace_provisioner import GitCloneError
 from mad.core.events.emitter import EventEmitter
 from mad.core.events.ports.event_bus import EventBus
 from mad.core.events.ports.event_log_query import EventLogQuery
@@ -238,6 +239,14 @@ def create_app(
     @app.exception_handler(ValueError)
     async def _value_error_handler(request: Request, exc: ValueError) -> JSONResponse:
         return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+    @app.exception_handler(GitCloneError)
+    async def _git_clone_error_handler(request: Request, exc: GitCloneError) -> JSONResponse:
+        # The upstream clone failed (e.g. a private repo with no host credential).
+        # 502 distinguishes "Mad could not reach/authenticate the upstream repo"
+        # from a malformed request (400) — the detail carries the actionable hint
+        # and never the token (scrubbed at the provisioner, hard rule 2).
+        return JSONResponse(status_code=502, content={"detail": str(exc)})
 
     @app.exception_handler(TaskNotFound)
     async def _task_not_found_handler(request: Request, exc: TaskNotFound) -> JSONResponse:

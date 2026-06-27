@@ -60,7 +60,17 @@ class ResourceRequest(BaseModel):
     type: Literal["github_repository", "file"]
     mount_path: str
     url: str = ""
-    authorization_token: str | None = None
+    authorization_token: str | None = Field(
+        default=None,
+        deprecated=True,
+        description=(
+            "DEPRECATED (issue #89), removal target v0.6.0. Inline GitHub clone PAT. "
+            "Source the credential from the host's GITHUB_TOKEN (or GH_TOKEN) "
+            "environment variable instead — passing a secret through the request body "
+            "risks leaking it into client logs / MCP transcripts. When still supplied, "
+            "it takes precedence over the host env var and emits a deprecation warning."
+        ),
+    )
     checkout: ResourceCheckout | dict[str, Any] | None = None
     content: str = ""
 
