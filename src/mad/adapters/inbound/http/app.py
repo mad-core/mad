@@ -13,9 +13,13 @@ from mad.adapters.inbound.http.routes.events import router as events_router
 from mad.adapters.inbound.http.routes.orchestration import router as orchestration_router
 from mad.adapters.inbound.http.routes.providers import router as providers_router
 from mad.adapters.inbound.http.routes.sessions import router as sessions_router
+from mad.adapters.inbound.http.routes.workflows import router as workflows_router
 from mad.adapters.outbound.agents import factory
 from mad.adapters.outbound.orchestration.git_inspector import SubprocessGitInspector
 from mad.adapters.outbound.orchestration.projection import InMemoryTaskProjection
+from mad.adapters.outbound.orchestration.workflow_projection import (
+    InMemoryWorkflowProjection,
+)
 from mad.adapters.outbound.persistence.jsonl_session_repository import (
     ensure_sessions_dir,
     purge_expired_logs,
@@ -32,6 +36,10 @@ from mad.core.orchestration.domain.exceptions.base import (
     SessionHasInFlightTask,
     TaskAlreadyDispatched,
     TaskNotFound,
+)
+from mad.core.orchestration.domain.exceptions.workflow import (
+    InvalidWorkflow,
+    WorkflowNotFound,
 )
 from mad.core.orchestration.domain.model_config import DeploymentModelConfig
 from mad.core.orchestration.domain.ordering import InvalidPriority
@@ -53,6 +61,7 @@ from mad.core.orchestration.use_cases.rehydrate_pending_sessions import (
     rehydrate_pending_sessions,
 )
 from mad.core.orchestration.use_cases.trigger_manual_dispatch import TriggerNotApplicable
+from mad.core.orchestration.use_cases.workflow_coordinator import WorkflowCoordinator
 from mad.core.sessions import SessionStore
 from mad.core.sessions.domain.exceptions.base import PathTraversalError, SessionNotFound
 from mad.core.sessions.ports.outbound.agent_launcher import AgentLauncher
@@ -77,6 +86,8 @@ def create_app(
     deployment_model_config: DeploymentModelConfig | None = None,
     deployment_effort_config: DeploymentEffortConfig | None = None,
     git_inspector: GitInspector | None = None,
+    workflow_read_model: InMemoryWorkflowProjection | None = None,
+    workflow_coordinator: WorkflowCoordinator | None = None,
 ) -> FastAPI:
     """Build a FastAPI app with injected dependencies."""
 
@@ -93,6 +104,7 @@ def create_app(
         _default_model_catalog,
         _default_deployment_model_config,
         _default_deployment_effort_config,
+        _default_workflow_read_model,
     ) = build_dependencies()
 
     final_store = store if store is not None else _default_store
@@ -164,6 +176,29 @@ def create_app(
             dispatcher_kwargs["tick_interval_s"] = dispatcher_tick_interval_s
         final_dispatcher = Dispatcher(**dispatcher_kwargs)  # type: ignore[arg-type]
 
+    # Workflow read projection + coordinator (issue #90, ADR-0013). The
+    # coordinator subscribes to the bus alongside the dispatcher, holds each
+    # dependent step's task unqueued until its predecessors complete, and then
+    # provisions + enqueues it through the same use cases the HTTP routes use.
+    final_workflow_read_model = (
+        workflow_read_model
+        if workflow_read_model is not None
+        else _default_workflow_read_model
+    )
+    if workflow_coordinator is not None:
+        final_workflow_coordinator = workflow_coordinator
+    else:
+        final_workflow_coordinator = WorkflowCoordinator(
+            read_model=final_workflow_read_model,
+            emitter=final_event_emitter,
+            bus=final_event_bus,
+            sessions_index=final_store.sessions,
+            idempotency_index=final_store.idempotency,
+            provisioner=final_provisioner,
+            event_log_query=final_event_log_query,
+            model_catalog=final_model_catalog,
+        )
+
     # MCP inbound adapter (ADR-0010): same process, same dependencies as the
     # HTTP routes — tools call use cases in-process, not Mad's own HTTP. The
     # session manager must run inside an async context, so it is entered in
@@ -185,6 +220,7 @@ def create_app(
         model_catalog=final_model_catalog,
         deployment_model_config=final_deployment_model_config,
         deployment_effort_config=final_deployment_effort_config,
+        workflow_read_model=final_workflow_read_model,
     )
     mcp_asgi_app = mcp_server.streamable_http_app()
 
@@ -215,11 +251,19 @@ def create_app(
         # Rebuild the deployment-wide effort default from its reserved log
         # (issue #60, hard rule 6).
         bootstrap_deployment_effort_config(final_deployment_effort_config, final_repo)
+        # Rebuild the workflow read projection from the persisted workflow.*
+        # stream so GET /v1/workflows/{id} answers immediately after a restart
+        # (issue #90, hard rule 6).
+        final_workflow_read_model.bootstrap_from_log(final_event_log_query)
         await final_dispatcher.start()
+        # Start the coordinator AFTER the dispatcher so any task it enqueues on
+        # resume is picked up by an already-subscribed dispatcher.
+        await final_workflow_coordinator.start()
         async with mcp_server.session_manager.run():
             try:
                 yield
             finally:
+                await final_workflow_coordinator.stop()
                 await final_dispatcher.stop()
 
     app = FastAPI(title="Mad", version="0.3.0", lifespan=lifespan)
@@ -237,6 +281,8 @@ def create_app(
     app.state.model_catalog = final_model_catalog
     app.state.deployment_model_config = final_deployment_model_config
     app.state.deployment_effort_config = final_deployment_effort_config
+    app.state.workflow_read_model = final_workflow_read_model
+    app.state.workflow_coordinator = final_workflow_coordinator
     app.state.mcp_server = mcp_server
 
     @app.exception_handler(PathTraversalError)
@@ -304,9 +350,23 @@ def create_app(
     ) -> JSONResponse:
         return JSONResponse(status_code=409, content={"detail": str(exc)})
 
+    @app.exception_handler(InvalidWorkflow)
+    async def _invalid_workflow_handler(request: Request, exc: InvalidWorkflow) -> JSONResponse:
+        # InvalidWorkflow inherits ValueError; a cyclic graph, unknown
+        # depends_on, or dangling from_step is a defect in the caller's
+        # payload — 422, never the generic 400 (issue #90).
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+
+    @app.exception_handler(WorkflowNotFound)
+    async def _workflow_not_found_handler(
+        request: Request, exc: WorkflowNotFound
+    ) -> JSONResponse:
+        return JSONResponse(status_code=404, content={"detail": str(exc)})
+
     app.include_router(sessions_router)
     app.include_router(events_router)
     app.include_router(orchestration_router)
     app.include_router(providers_router)
+    app.include_router(workflows_router)
     app.mount("/mcp", mcp_asgi_app)
     return app

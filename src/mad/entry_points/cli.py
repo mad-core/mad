@@ -72,6 +72,7 @@ def main() -> None:
             model_catalog,
             deployment_model_config,
             deployment_effort_config,
+            workflow_read_model,
         ) = build_dependencies()
 
         public_app = create_app(
@@ -87,6 +88,7 @@ def main() -> None:
             model_catalog=model_catalog,
             deployment_model_config=deployment_model_config,
             deployment_effort_config=deployment_effort_config,
+            workflow_read_model=workflow_read_model,
         )
         internal_app = create_internal_app(emitter)
 
