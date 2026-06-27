@@ -14,6 +14,7 @@ from mad.adapters.inbound.http.routes.orchestration import router as orchestrati
 from mad.adapters.inbound.http.routes.providers import router as providers_router
 from mad.adapters.inbound.http.routes.sessions import router as sessions_router
 from mad.adapters.outbound.agents import factory
+from mad.adapters.outbound.orchestration.git_inspector import SubprocessGitInspector
 from mad.adapters.outbound.orchestration.projection import InMemoryTaskProjection
 from mad.adapters.outbound.persistence.jsonl_session_repository import (
     ensure_sessions_dir,
@@ -35,6 +36,7 @@ from mad.core.orchestration.domain.exceptions.base import (
 from mad.core.orchestration.domain.model_config import DeploymentModelConfig
 from mad.core.orchestration.domain.ordering import InvalidPriority
 from mad.core.orchestration.ports.clock import Clock
+from mad.core.orchestration.ports.git_inspector import GitInspector
 from mad.core.orchestration.ports.model_catalog import ModelCatalog
 from mad.core.orchestration.use_cases.deployment_dispatch_policy import (
     bootstrap_deployment_policy,
@@ -74,6 +76,7 @@ def create_app(
     model_catalog: ModelCatalog | None = None,
     deployment_model_config: DeploymentModelConfig | None = None,
     deployment_effort_config: DeploymentEffortConfig | None = None,
+    git_inspector: GitInspector | None = None,
 ) -> FastAPI:
     """Build a FastAPI app with injected dependencies."""
 
@@ -135,6 +138,13 @@ def create_app(
         else _default_deployment_effort_config
     )
 
+    # Production default observes git state via subprocess; tests inject a
+    # fake (issue #88). Constructed unconditionally so the default app wires
+    # git-result capture without the caller opting in.
+    final_git_inspector: GitInspector = (
+        git_inspector if git_inspector is not None else SubprocessGitInspector()
+    )
+
     if dispatcher is not None:
         final_dispatcher = dispatcher
     else:
@@ -148,6 +158,7 @@ def create_app(
             "deployment_policy": final_deployment_policy,
             "deployment_model_config": final_deployment_model_config,
             "deployment_effort_config": final_deployment_effort_config,
+            "git_inspector": final_git_inspector,
         }
         if dispatcher_tick_interval_s is not None:
             dispatcher_kwargs["tick_interval_s"] = dispatcher_tick_interval_s

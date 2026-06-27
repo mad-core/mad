@@ -39,6 +39,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from collections.abc import AsyncIterator, Callable
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -72,6 +73,7 @@ from mad.core.orchestration.domain.timeout_config import (
     resolve_effective_timeout,
 )
 from mad.core.orchestration.ports.clock import Clock
+from mad.core.orchestration.ports.git_inspector import GitInspector
 from mad.core.orchestration.ports.task_projection import TaskProjection
 from mad.core.sessions.domain.entities.session import Session
 from mad.core.sessions.use_cases.send_user_message import _run_launcher
@@ -94,6 +96,7 @@ class Dispatcher:
         deployment_policy: DeploymentDispatchPolicy | None = None,
         deployment_model_config: DeploymentModelConfig | None = None,
         deployment_effort_config: DeploymentEffortConfig | None = None,
+        git_inspector: GitInspector | None = None,
     ) -> None:
         self._projection = projection
         self._emitter = emitter
@@ -101,6 +104,10 @@ class Dispatcher:
         self._sessions = sessions_index
         self._get_launcher = get_launcher
         self._clock = clock
+        # Read-only git observer (issue #88). None disables git-result capture
+        # entirely — the legacy unit harness and any caller that does not wire
+        # an inspector simply never emit ``task.git_result``.
+        self._git_inspector = git_inspector
         self._tick_interval_s = tick_interval_s
         # Process-global default that sessions without an override inherit
         # (issue #45). Held by reference so a live ``PUT /v1/dispatch_policy``
@@ -248,12 +255,17 @@ class Dispatcher:
         # if it ever returns to queued state (it can't in v1, but defensive)
         # the next deferral re-emits cleanly.
         self._deferred_tasks.discard(next_task.task_id)
+        # Capture the git baseline BEFORE the agent runs (issue #88): HEAD now
+        # is what ``task.git_result`` later diffs against. Read-only and
+        # graceful — a non-git workspace yields None and the completion path
+        # simply omits the git-result event.
+        base_sha = await self._read_base_sha(session)
         await self._emitter.emit(
             next_task.session_id,
             "task.dispatched",
             {"task_id": str(next_task.task_id)},
         )
-        self._launch_task = asyncio.create_task(self._run_task(next_task))
+        self._launch_task = asyncio.create_task(self._run_task(next_task, base_sha))
 
     def _find_next_dispatchable(self) -> Task | None:
         """Pick the next task in cross-session dispatch order.
@@ -330,7 +342,57 @@ class Dispatcher:
             },
         )
 
-    async def _run_task(self, task: Task) -> None:
+    # -- Git result capture (issue #88) ------------------------------------
+
+    def _workspace_for(self, session: Session) -> Path:
+        """The directory the launcher ran in — where the agent's commits land.
+
+        Aligns with the launcher cwd (ADR-0011): the cloned repo path for a
+        single-github-mount session, else the workspace root. ``Session``
+        normalizes ``working_directory`` to ``workspace`` when unset, so this
+        is always populated.
+        """
+        return Path(session.working_directory)
+
+    async def _read_base_sha(self, session: Session) -> str | None:
+        """Capture HEAD at dispatch time, swallowing any inspector failure.
+
+        Returns ``None`` when no inspector is wired, the workspace is not a
+        git repo, or git fails — never raises, so a git problem cannot block
+        dispatch (issue #88 AC: failure to read git state does not fail the
+        task)."""
+        if self._git_inspector is None:
+            return None
+        try:
+            return await self._git_inspector.read_head_sha(self._workspace_for(session))
+        except Exception:
+            return None
+
+    async def _emit_git_result(self, task: Task, base_sha: str | None) -> None:
+        """Observe the post-run git state and emit ``task.git_result``.
+
+        Best-effort (issue #88 AC): a missing inspector, an uncaptured
+        baseline, a non-git workspace, or any inspector failure omits the
+        event silently — it never fails the just-completed task.
+        """
+        if self._git_inspector is None:
+            return
+        session = self._sessions.get(task.session_id)
+        if session is None:
+            return
+        try:
+            result = await self._git_inspector.inspect(self._workspace_for(session), base_sha)
+        except Exception:
+            return
+        if result is None:
+            return
+        await self._emitter.emit(
+            task.session_id,
+            "task.git_result",
+            result.to_event_data(str(task.task_id)),
+        )
+
+    async def _run_task(self, task: Task, base_sha: str | None = None) -> None:
         """Drive the launcher for one task, then emit task.completed/failed.
 
         Rate-limit failures are retried with exponential backoff (issue #62):
@@ -475,6 +537,7 @@ class Dispatcher:
                     "task.completed",
                     {"task_id": str(task.task_id)},
                 )
+                await self._emit_git_result(task, base_sha)
                 return
         except Exception as exc:
             await self._emitter.emit(

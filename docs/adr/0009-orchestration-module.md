@@ -53,6 +53,7 @@ The event types this module emits, verbatim per ADR-0004:
 | `task.queued` | A task is enqueued via `POST /v1/sessions/{id}/tasks`. | `{task_id, content, scheduled_for}` |
 | `task.dispatched` | The dispatcher pulls a queued task and starts the launcher run. | `{task_id}` |
 | `task.completed` | The launcher run for a dispatched task reaches `session.status_idle`. | `{task_id}` |
+| `task.git_result` | Emitted immediately after `task.completed` (issue #88). Mad reads the workspace's git state — read-only filesystem observation, not agent-output parsing (hard rule 1) — relative to the `base_sha` captured at `task.dispatched`. Omitted (not failed) when the workspace is not a git repository or git inspection fails. | `{task_id, base_sha, head_branch, head_sha, commits: [{sha, subject}], dirty, pushed}` |
 | `task.cancelled` | A queued task is removed via `DELETE /v1/sessions/{id}/tasks/{task_id}`. | `{task_id, reason}` |
 | `task.failed` | A dispatched task's launcher run reaches `session.error`, OR the dispatcher detects an interrupted-mid-flight task on startup recovery. | `{task_id, reason}` |
 | `task.deferred` | A dispatched task hits a rate limit and its next retry attempt would fall outside the session's `work_window`; the dispatcher returns it to the queue instead of relaunching outside the window (issue #79). | `{task_id, reason, scheduled_for}` |
