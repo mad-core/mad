@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.5.21 (2026-06-27)
+
+### Features
+
+- **config**: Source GitHub clone PAT from host env; deprecate inline PAT
+  ([`72bd84f`](https://github.com/mad-core/mad/commit/72bd84f107d228b458a2231668f5878089adf0e8))
+
+
 ## v0.5.20 (2026-06-27)
 
 ### Bug Fixes
