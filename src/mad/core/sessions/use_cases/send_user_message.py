@@ -89,6 +89,7 @@ class SendUserMessageUseCase:
             ),
         )
         effective_effort = resolve_effective_effort(
+            task_effort=None,
             session_effort=session.effort,
             deployment_default=(
                 self._deployment_effort_config.default_effort

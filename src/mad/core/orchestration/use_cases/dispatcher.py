@@ -414,9 +414,10 @@ class Dispatcher:
                 else None
             ),
         )
-        # Effort precedence is session > deployment only (issue #60);
-        # there is no task-level effort, unlike model above.
+        # Effort precedence is task > session > deployment (issue #81),
+        # symmetric with model above.
         effective_effort = resolve_effective_effort(
+            task_effort=task.effort,
             session_effort=session.effort,
             deployment_default=(
                 self._deployment_effort_config.default_effort

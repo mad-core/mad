@@ -390,6 +390,7 @@ def build_mcp_server(
                 content=payload.content,
                 scheduled_for=payload.scheduled_for,
                 model=payload.model,
+                effort=payload.effort,
                 conversation_mode=payload.conversation_mode,
             )
         )
@@ -417,6 +418,7 @@ def build_mcp_server(
                     scheduled_for=t.scheduled_for,
                     created_at=t.created_at,
                     model=t.model,
+                    effort=t.effort,
                     conversation_mode=t.conversation_mode,
                 )
                 for t in output.queued
@@ -429,6 +431,7 @@ def build_mcp_server(
                     scheduled_for=output.in_flight.scheduled_for,
                     created_at=output.in_flight.created_at,
                     model=output.in_flight.model,
+                    effort=output.in_flight.effort,
                     conversation_mode=output.in_flight.conversation_mode,
                     status="retrying" if ri is not None else "dispatched",
                     retry_info=ri,

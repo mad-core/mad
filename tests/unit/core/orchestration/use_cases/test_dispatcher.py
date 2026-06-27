@@ -214,6 +214,74 @@ async def test_two_queued_tasks_run_sequentially_not_in_parallel(
         await h.stop()
 
 
+# -- Per-task effort forwarding (issue #81) -----------------------------------
+
+
+async def test_per_task_effort_is_forwarded_to_launcher(tmp_path: Path) -> None:
+    """A task's ``effort`` reaches the launcher at dispatch time (AC c)."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    sessions = {"sesn_a": _session("sesn_a", workspace)}
+    launcher = ScriptedLauncher()
+    _scripted_two_runs(launcher)
+    h = _Harness(sessions, launcher)
+    await h.start()
+    try:
+        await h.enqueue.execute(
+            EnqueueTaskInput(session_id="sesn_a", content="security review", effort="high")
+        )
+        await _wait_for_event_type(h.store, session_id="sesn_a", event_type="task.completed")
+
+        # The primary launcher run received the task-level effort.
+        assert launcher.calls[0]["effort"] == "high"
+    finally:
+        await h.stop()
+
+
+async def test_task_effort_overrides_session_effort_at_dispatch(tmp_path: Path) -> None:
+    """task > session precedence is applied by the dispatcher: the task value
+    wins over the session's own effort (AC b)."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    session = _session("sesn_a", workspace)
+    session.effort = "low"
+    sessions = {"sesn_a": session}
+    launcher = ScriptedLauncher()
+    _scripted_two_runs(launcher)
+    h = _Harness(sessions, launcher)
+    await h.start()
+    try:
+        await h.enqueue.execute(
+            EnqueueTaskInput(session_id="sesn_a", content="migration", effort="xhigh")
+        )
+        await _wait_for_event_type(h.store, session_id="sesn_a", event_type="task.completed")
+
+        assert launcher.calls[0]["effort"] == "xhigh"
+    finally:
+        await h.stop()
+
+
+async def test_session_effort_used_when_task_has_no_effort(tmp_path: Path) -> None:
+    """Negative twin: a task with no effort inherits the session level — the
+    dispatcher never substitutes a default (AC d)."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    session = _session("sesn_a", workspace)
+    session.effort = "low"
+    sessions = {"sesn_a": session}
+    launcher = ScriptedLauncher()
+    _scripted_two_runs(launcher)
+    h = _Harness(sessions, launcher)
+    await h.start()
+    try:
+        await h.enqueue.execute(EnqueueTaskInput(session_id="sesn_a", content="docs"))
+        await _wait_for_event_type(h.store, session_id="sesn_a", event_type="task.completed")
+
+        assert launcher.calls[0]["effort"] == "low"
+    finally:
+        await h.stop()
+
+
 # -- Negative twins -----------------------------------------------------------
 
 
