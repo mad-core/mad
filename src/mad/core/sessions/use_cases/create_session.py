@@ -34,6 +34,12 @@ class ResourceSpec:
     url: str = ""
     authorization_token: str | None = None
     checkout: dict[str, Any] | None = None
+    # Per-mount checkout target (branch name or commit SHA). When set it wins
+    # over the session-wide ``CreateSessionInput.base_branch`` for THIS mount;
+    # unset (the default) preserves the historical single-base-branch behaviour.
+    # Used by the workflow coordinator (#90) to clone each ``from_step`` mount
+    # at the predecessor's produced ref while other mounts keep their own.
+    base_branch: str | None = None
     # file
     content: str = ""
 
@@ -126,7 +132,7 @@ class CreateSessionUseCase:
                     mount_path=res.mount_path,
                     repo_url=res.url,
                     token=token,
-                    base_branch=payload.base_branch,
+                    base_branch=res.base_branch or payload.base_branch,
                 )
                 resources_mounted.append({
                     "type": "github_repository",
