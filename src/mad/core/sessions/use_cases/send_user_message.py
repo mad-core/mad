@@ -153,6 +153,14 @@ async def _run_launcher(
     primary run and the post-run auto-sync run so a session's timeout applies
     uniformly. ``None`` lets the provider apply its own 600 s fallback.
 
+    The post-run auto-sync (issue #8) is best-effort once the primary has
+    run: a ``RateLimitError`` raised by the auto-sync invocation is NOT
+    propagated (it would otherwise make the dispatcher re-run the whole
+    coroutine and re-execute the already-successful primary prompt —
+    issue #87). It is surfaced as a non-terminal ``agent.autosync.rate_limited``
+    event and swallowed. Any other auto-sync failure still emits
+    ``session.error`` and, under ``propagate_failures``, is re-raised.
+
     ``conversation_mode`` controls whether to start a fresh conversation
     (``"new"``, default) or continue a previous one (``"resume"``).
     When resuming, ``session.last_conversation_id`` is passed to the
@@ -251,6 +259,21 @@ async def _run_launcher(
             model=model,
             effort=effort,
             timeout_s=timeout_s,
+        )
+    except RateLimitError as exc:
+        # The primary run already succeeded; the post-run auto-sync is a
+        # best-effort publish step. A rate limit HERE must NOT propagate as
+        # a RateLimitError, because the dispatcher's retry loop would catch
+        # it and re-run _run_launcher from the top — re-executing the
+        # already-successful primary prompt (issue #87). Surface a distinct,
+        # non-terminal signal and swallow it: do NOT emit session.error, do
+        # NOT mark_error, and (crucially) do NOT store it in
+        # auto_sync_failure so it is never re-raised. The dispatcher then
+        # records task.completed for the primary work that did succeed.
+        await emitter.emit(
+            session_id,
+            "agent.autosync.rate_limited",
+            {"reason": exc.reason},
         )
     except Exception as exc:
         await emitter.emit(

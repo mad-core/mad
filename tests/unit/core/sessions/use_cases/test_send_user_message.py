@@ -11,6 +11,7 @@ import asyncio
 import pytest
 
 from mad.core.events.emitter import EventEmitter
+from mad.core.orchestration.domain.exceptions.rate_limit import RateLimitError
 from mad.core.sessions.domain.entities.session import Session
 from mad.core.sessions.domain.exceptions.base import SessionNotFound
 from mad.core.sessions.use_cases.send_user_message import (
@@ -182,6 +183,49 @@ async def test_post_run_auto_sync_failure_emits_session_error():
     error_events = [e for e in repo.events if e["type"] == "session.error"]
     assert any("auto-sync failed" in e.get("error", "") for e in error_events)
     assert sessions["sesn_msg"].status == "error"
+
+
+async def test_post_run_auto_sync_rate_limit_is_non_terminal_not_session_error():
+    """A RateLimitError from the auto-sync run is NOT a session.error.
+
+    Negative twin of ``test_post_run_auto_sync_failure_emits_session_error``:
+    a *non*-rate-limit auto-sync failure is terminal (session.error +
+    status=error); a *rate-limit* auto-sync failure (issue #87) is best-effort
+    and surfaces the non-terminal ``agent.autosync.rate_limited`` instead,
+    leaving the session idle (the primary run succeeded).
+    """
+    repo = FakeRepo()
+    sessions = {"sesn_msg": _make_session()}
+    bus = FakeEventBus()
+
+    calls: list[int] = []
+
+    class AutoSyncRateLimited:
+        async def run(
+            self, session_id, prompt, workspace, emit, model=None, effort=None, conversation_id=None, timeout_s=None
+        ):
+            calls.append(1)
+            if len(calls) == 1:
+                await emit("session.status_idle", {"stop_reason": "end_turn"})
+                return None
+            raise RateLimitError(captured_id=None, reason="overloaded")
+
+    uc = _make_uc(sessions, lambda name: AutoSyncRateLimited(), repo, bus)
+
+    uc.execute(SendUserMessageInput(session_id="sesn_msg", content="hi"))
+    deadline = asyncio.get_event_loop().time() + 2.0
+    while len(calls) < 2 and asyncio.get_event_loop().time() < deadline:
+        await asyncio.sleep(0.05)
+    # Let the auto-sync branch finish emitting after the second run raises.
+    await asyncio.sleep(0.1)
+
+    types = [e["type"] for e in repo.events]
+    assert "agent.autosync.rate_limited" in types
+    rate_limited = next(e for e in repo.events if e["type"] == "agent.autosync.rate_limited")
+    assert rate_limited["reason"] == "overloaded"
+    # A rate-limited auto-sync must NOT masquerade as a terminal session error.
+    assert "session.error" not in types
+    assert sessions["sesn_msg"].status == "idle"
 
 
 async def test_send_message_records_session_error_when_launcher_raises():

@@ -332,6 +332,82 @@ async def test_rate_limit_floor_overrides_backoff(
         await h.stop()
 
 
+async def test_auto_sync_rate_limit_does_not_rerun_primary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Primary OK + auto-sync rate-limited → the primary is NOT re-executed.
+
+    Issue #87 / ADR-0009 §13. The dispatcher's retry loop must not catch a
+    RateLimitError raised by the post-run auto-sync (#8) and re-run
+    ``_run_launcher`` from the top. The launcher is invoked exactly twice
+    (primary + auto-sync), the task is ``task.completed``, and the condition
+    is surfaced as the non-terminal ``agent.autosync.rate_limited`` — never
+    ``task.retrying`` / ``task.failed`` / ``session.error``.
+
+    Negative twin: ``test_rate_limit_retry_then_success`` — a rate limit on
+    the *primary* run DOES retry and re-runs the primary (calls[1] is a fresh
+    primary attempt). Backoff is forced to ~0 s so that, were the bug present,
+    the spurious retry would fire within the settle window (calls==4,
+    task.retrying emitted) rather than only after a real backoff.
+    """
+    import mad.core.orchestration.domain.retry_schedule as sched
+
+    monkeypatch.setattr(sched, "_BASE_S", 0.01)
+    monkeypatch.setattr(sched, "_JITTER_FRACTION", 0.0)
+    monkeypatch.setattr(sched, "_MIN_BACKOFF_S", 0.0)
+
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    launcher = ScriptedLauncher()
+    launcher.script_raising(
+        [
+            (
+                [{"type": "session.status_idle", "stop_reason": "end_turn"}],
+                "conv-primary-ok",
+            ),  # primary run succeeds
+            RateLimitError(captured_id=None, reason="overloaded"),  # auto-sync rate-limited
+        ]
+    )
+
+    sessions = {"sesn_as": _session("sesn_as", workspace)}
+    h = _Harness(sessions, launcher)
+    await h.start()
+    try:
+        await h.enqueue.execute(
+            EnqueueTaskInput(session_id="sesn_as", content="do work", conversation_mode="new")
+        )
+        await _wait_for_event(h.store, session_id="sesn_as", event_type="task.completed")
+        # Settle: were the bug present, the spurious retry (fast backoff) would
+        # have fired a 3rd/4th launcher call and a task.retrying by now.
+        await _wait_no_event(h.store, session_id="sesn_as", event_type="task.retrying")
+
+        # The launcher ran exactly twice: primary + auto-sync, NO primary re-run.
+        assert len(launcher.calls) == 2, (
+            f"primary must not re-run on an auto-sync rate limit; got {len(launcher.calls)} calls"
+        )
+        assert launcher.calls[0]["prompt"] == "do work"
+        assert "auto-sync" in launcher.calls[1]["prompt"].lower()
+
+        # Non-terminal signal emitted with the reason carried through —
+        # presence and value asserted on the same extracted event.
+        rl = next(
+            (
+                c
+                for c in h.store.calls
+                if c[0] == "sesn_as" and c[1] == "agent.autosync.rate_limited"
+            ),
+            None,
+        )
+        assert rl is not None, "auto-sync rate limit must emit agent.autosync.rate_limited"
+        assert rl[2]["reason"] == "overloaded"
+        # None of the terminal-looking / retry signals fire.
+        types = [c[1] for c in h.store.calls if c[0] == "sesn_as"]
+        assert "task.failed" not in types
+        assert "session.error" not in types
+    finally:
+        await h.stop()
+
+
 async def test_retrying_projection_shows_retry_info(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
