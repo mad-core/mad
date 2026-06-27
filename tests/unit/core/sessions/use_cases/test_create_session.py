@@ -138,7 +138,6 @@ async def test_github_repo_resource_is_materialized(use_case, provisioner):
                 type="github_repository",
                 mount_path="/workspace/repo",
                 url="https://github.com/test/repo",
-                authorization_token="ghp_test",
             )
         ],
     )
@@ -186,10 +185,8 @@ async def test_base_branch_defaults_to_none_when_omitted(use_case, provisioner):
     assert output.session.base_branch is None
 
 
-async def test_tokens_stored_in_session_for_redaction(use_case):
-    uc, sessions, _ = use_case
-    token = "ghp_mysecret"
-    payload = CreateSessionInput(
+def _github_payload(token: str | None = None) -> CreateSessionInput:
+    return CreateSessionInput(
         agent={"name": "a", "provider": "fake"},
         resources=[
             ResourceSpec(
@@ -200,5 +197,59 @@ async def test_tokens_stored_in_session_for_redaction(use_case):
             )
         ],
     )
-    output = await uc.execute(payload)
+
+
+async def test_tokens_stored_in_session_for_redaction(use_case):
+    uc, sessions, _ = use_case
+    token = "ghp_mysecret"
+    with pytest.warns(DeprecationWarning):
+        output = await uc.execute(_github_payload(token))
     assert token in output.session.tokens_to_redact
+
+
+async def test_inline_token_emits_deprecation_warning(use_case):
+    """Supplying the inline authorization_token warns (#89 Stage 1: accept + warn)."""
+    uc, _, _ = use_case
+    with pytest.warns(DeprecationWarning, match="authorization_token"):
+        await uc.execute(_github_payload("ghp_inline"))
+
+
+async def test_env_sourced_token_passed_to_provisioner(use_case, provisioner, monkeypatch):
+    """With no inline token, the host GITHUB_TOKEN is used for the clone (#89)."""
+    uc, _, _ = use_case
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp_from_env")
+    await uc.execute(_github_payload(None))
+    assert provisioner.cloned_tokens == ["ghp_from_env"]
+
+
+async def test_env_sourced_token_is_redacted(use_case, monkeypatch):
+    """An env-sourced credential is added to tokens_to_redact, not just inline ones."""
+    uc, sessions, _ = use_case
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp_from_env")
+    output = await uc.execute(_github_payload(None))
+    assert "ghp_from_env" in output.session.tokens_to_redact
+
+
+async def test_env_sourced_token_does_not_warn(use_case, monkeypatch, recwarn):
+    """Negative twin: sourcing from the env emits no deprecation warning."""
+    uc, _, _ = use_case
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp_from_env")
+    await uc.execute(_github_payload(None))
+    assert not [w for w in recwarn.list if issubclass(w.category, DeprecationWarning)]
+
+
+async def test_inline_token_takes_precedence_over_env(use_case, provisioner, monkeypatch):
+    """Defined precedence: inline wins over host env when both are present."""
+    uc, _, _ = use_case
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp_from_env")
+    with pytest.warns(DeprecationWarning):
+        await uc.execute(_github_payload("ghp_inline"))
+    assert provisioner.cloned_tokens == ["ghp_inline"]
+
+
+async def test_no_token_when_neither_inline_nor_env(use_case, provisioner):
+    """Negative twin: no credential anywhere -> provisioner gets None, nothing to redact."""
+    uc, sessions, _ = use_case
+    output = await uc.execute(_github_payload(None))
+    assert provisioner.cloned_tokens == [None]
+    assert output.session.tokens_to_redact == []

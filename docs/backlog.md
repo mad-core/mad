@@ -41,6 +41,26 @@ SQLite adicionalmente habilita queries para listar, filtrar y paginar sesiones s
 
 ---
 
+## Deprecations
+
+### Remove inline `authorization_token` — Stage 2 (target v0.6.0)
+**Context:** issue #89 moved the GitHub clone PAT to the host `GITHUB_TOKEN` /
+`GH_TOKEN` environment variable. Stage 1 (shipped) keeps the inline
+`authorization_token` field on the `github_repository` resource mount accepted
+but marks it `deprecated=True` in the request/MCP model and emits a
+`DeprecationWarning` when supplied. Inline still takes precedence over the host
+env var during the deprecation window.
+
+**Stage 2 (target v0.6.0, a deliberate minor):** remove the
+`authorization_token` field from `ResourceRequest` / `ResourceSpec` and the MCP
+tool input, drop the deprecation warning, and source the clone credential
+exclusively from the host env var. This is a breaking change to the request
+shape — gate it behind a `BREAKING CHANGE:` footer / `workflow_dispatch`
+`release_kind: minor` per hard rule 12. Update `test_http_mcp_parity.py` stays
+green (no route change); the field removal only changes the body schema.
+
+---
+
 ## Otros
 
 - **Docker sandbox** — reemplazar bwrap/subprocess directo por contenedores efímeros.

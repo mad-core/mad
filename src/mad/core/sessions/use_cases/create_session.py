@@ -6,14 +6,22 @@ registration. No HTTP concerns here.
 from __future__ import annotations
 
 import uuid
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from mad.core.sessions.credentials import resolve_clone_token
 from mad.core.sessions.domain.entities.session import Session
 from mad.core.sessions.domain.value_objects.mount_path import MountPath
 from mad.core.events.emitter import EventEmitter
 from mad.core.sessions.ports.outbound.workspace_provisioner import WorkspaceProvisioner
+
+_INLINE_TOKEN_DEPRECATION = (
+    "The inline 'authorization_token' on github_repository resources is deprecated "
+    "and will be removed in v0.6.0. Configure the GitHub clone credential via the "
+    "GITHUB_TOKEN (or GH_TOKEN) host environment variable instead (issue #89)."
+)
 
 
 @dataclass
@@ -102,13 +110,22 @@ class CreateSessionUseCase:
         )
 
         resources_mounted: list[dict[str, Any]] = []
+        # Effective clone tokens actually used — collected for redaction below.
+        # Includes host-env-sourced tokens (#89), not just inline ones, so a
+        # credential read from GITHUB_TOKEN is redacted from agent output too.
+        effective_tokens: list[str] = []
         for res in payload.resources:
             if res.type == "github_repository":
+                if res.authorization_token:
+                    warnings.warn(_INLINE_TOKEN_DEPRECATION, DeprecationWarning, stacklevel=2)
+                token = resolve_clone_token(res.authorization_token)
+                if token:
+                    effective_tokens.append(token)
                 self._provisioner.materialize_github_repo(
                     workspace=workspace,
                     mount_path=res.mount_path,
                     repo_url=res.url,
-                    token=res.authorization_token,
+                    token=token,
                     base_branch=payload.base_branch,
                 )
                 resources_mounted.append({
@@ -140,12 +157,9 @@ class CreateSessionUseCase:
             "resources_mounted": resources_mounted,
         }
 
-        # Collect tokens for redaction — stored in memory only, never persisted (hard rule 2)
-        tokens_to_redact = [
-            res.authorization_token
-            for res in payload.resources
-            if res.authorization_token
-        ]
+        # Collect tokens for redaction — stored in memory only, never persisted (hard rule 2).
+        # Deduplicate while preserving order; an env-sourced token is shared across mounts.
+        tokens_to_redact = list(dict.fromkeys(effective_tokens))
 
         session = Session(
             session_id=session_id,
