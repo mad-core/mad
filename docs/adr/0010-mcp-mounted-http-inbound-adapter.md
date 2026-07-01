@@ -9,7 +9,7 @@ Driving Mad today means writing HTTP client glue per adopter. Issue #32 wants an
 
 Three forces shaped the design:
 
-1. **The orchestrator is remote; Mad is self-hosted.** The agent runs on a laptop, Mad runs on the operator's machine reachable only through the Cloudflare Tunnel that already proxies the REST API (ADR-0006, `docs/cloudflare-tunnel.md`). The MCP transport has to ride that same tunnel.
+1. **The orchestrator is remote; Mad is self-hosted.** The agent runs on a laptop, Mad runs on the operator's machine reachable only through the Cloudflare Tunnel that already proxies the REST API (ADR-0006, `docs/05-operations/runbooks/cloudflare-tunnel.md`). The MCP transport has to ride that same tunnel.
 2. **Mad must keep inferring nothing (hard rule 1, ADR-0004).** "Failed", "needs attention", "safe to delete" are the orchestrator LLM's conclusions. Mad exposes use cases and returns raw `status`.
 3. **No schema may drift from the REST boundary (hard rule 9).** A second hand-written model set for MCP would diverge from the HTTP request/response models the moment either side changes.
 
@@ -39,7 +39,7 @@ Tool inputs/outputs are typed with the *same* `CreateSessionRequest` / `SendMess
 
 ### 5. Authentication stays at the Cloudflare edge; DNS-rebinding protection is off by default
 
-No auth code enters Mad. The security boundary is Cloudflare Access (Service Token) plus the loopback bind — identical to the REST API (ADR-0006, `docs/cloudflare-tunnel.md`). MCP's built-in DNS-rebinding protection defaults to ON with an empty host allowlist, which would reject the tunnel hostname and break the deployment entirely. It is therefore **disabled by default**; operators wanting in-process defense-in-depth set `MAD_MCP_ALLOWED_HOSTS` (comma-separated) to flip it on, scoped to those hosts. DNS-rebinding protection guards browser-driven *local* servers — not the control plane for a token-gated tunnel.
+No auth code enters Mad. The security boundary is Cloudflare Access (Service Token) plus the loopback bind — identical to the REST API (ADR-0006, `docs/05-operations/runbooks/cloudflare-tunnel.md`). MCP's built-in DNS-rebinding protection defaults to ON with an empty host allowlist, which would reject the tunnel hostname and break the deployment entirely. It is therefore **disabled by default**; operators wanting in-process defense-in-depth set `MAD_MCP_ALLOWED_HOSTS` (comma-separated) to flip it on, scoped to those hosts. DNS-rebinding protection guards browser-driven *local* servers — not the control plane for a token-gated tunnel.
 
 ## Consequences
 
@@ -75,4 +75,4 @@ No auth code enters Mad. The security boundary is Cloudflare Access (Service Tok
 - [ADR-0004](0004-events-module-vocabulary-and-scope.md) — events are observability only; this ADR's "no event tools" follows directly.
 - [ADR-0006](0006-multi-tenancy-deferred.md) — single-operator assumption; Cloudflare Access covers auth.
 - [ADR-0007](0007-single-write-gateway-event-emitter.md) — tools call use cases, which write via `EventEmitter`; the adapter never writes directly.
-- `docs/cloudflare-tunnel.md` / `docs/claude-code-mcp.md` — operator exposure and client-config guides.
+- `docs/05-operations/runbooks/cloudflare-tunnel.md` / `docs/05-operations/runbooks/claude-code-mcp.md` — operator exposure and client-config guides.

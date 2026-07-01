@@ -24,8 +24,12 @@ Two conventions keep this directory honest:
 
 | Procedure | What it covers | Status |
 |---|---|---|
-| Sandbox hardening | Wrap agent/tool execution in a bubblewrap (`bwrap`) sandbox so a runaway agent cannot touch the operator's real filesystem, home, or network. | Written — [`../../sandbox-bwrap.md`](../../sandbox-bwrap.md) |
-| Expose via Cloudflare Tunnel | Reach a self-hosted Mad from any device through `cloudflared` + Cloudflare Access Service Tokens, with auth enforced at the edge (no code change in Mad). Includes the SSE-buffering caveat and the loopback-bind threat model. | Written — [`../../cloudflare-tunnel.md`](../../cloudflare-tunnel.md) |
+| Sandbox hardening | Wrap the spawned agent-CLI process (`claude` / `opencode`, per hard rule 1 — Mad never executes tools itself) in a bubblewrap (`bwrap`) sandbox so a runaway agent cannot touch the operator's real filesystem, home, or network. | Written — [`sandbox-bwrap.md`](sandbox-bwrap.md) |
+| Expose via Cloudflare Tunnel | Reach a self-hosted Mad from any device through `cloudflared` + Cloudflare Access Service Tokens, with auth enforced at the edge (no code change in Mad). Includes the SSE-buffering caveat and the loopback-bind threat model. | Written — [`cloudflare-tunnel.md`](cloudflare-tunnel.md) |
+| Running Mad in Docker | Run one or more isolated Mad instances on a single host with Docker/compose: per-instance credentials, workspace bind mounts, PUID/PGID host ownership, multi-instance patterns. | Written — [`docker.md`](docker.md) |
+| Driving Mad over MCP | Configure Claude Code / Claude Desktop to drive Mad's full tool surface over `/mcp`, locally or through the tunnel, including `MAD_MCP_ALLOWED_HOSTS` and manual validation. | Written — [`claude-code-mcp.md`](claude-code-mcp.md) |
+| AI development on an issue | Enable the label-gated GitHub Action that runs Claude-driven development on an issue and opens a PR. | Written — [`ai-develop-on-issue.md`](ai-develop-on-issue.md) |
+| TestPyPI preview builds | Set up and use the per-PR TestPyPI pre-release round-trip that validates the built `mad-bros` artifact before a real release. | Written — [`testpypi-preview.md`](testpypi-preview.md) |
 | Restart and resume | Restart the dual-uvicorn server (public TCP app + internal UDS hook app, see `make serve`) and let in-flight session state rebuild itself. | TODO |
 | Rotate GitHub / Anthropic credentials | Replace the GitHub clone token and the Anthropic credential without leaking either into a workspace or the event log. | TODO |
 | Purge old session logs (retention) | Reclaim disk by pruning aged session workspaces; Mad ships no built-in TTL. | TODO |

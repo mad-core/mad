@@ -1,3 +1,10 @@
+---
+service: mad
+domain: backend
+section: operations
+source_of_truth: repo
+---
+
 # Running Mad in Docker
 
 Operator's guide for running one or more **isolated** Mad instances on a single
@@ -70,7 +77,7 @@ curl http://localhost:${MAD_HOST_PORT:-8080}/openapi.json | head -c 200
 ```
 
 The API is now reachable on `http://<host>:<MAD_HOST_PORT>`. See the root
-[`README.md`](../README.md#quickstart) for the session-creation calls.
+[`README.md`](../../../README.md#quickstart) for the session-creation calls.
 
 Convenience `make` targets wrap the two common commands:
 
@@ -302,5 +309,5 @@ docker compose -f compose.example.yml exec mad sh -c 'claude --version; opencode
 ```
 
 For exposing an instance to the internet, see
-[`docs/cloudflare-tunnel.md`](cloudflare-tunnel.md) — auth happens at the
+[`cloudflare-tunnel.md`](cloudflare-tunnel.md) — auth happens at the
 Cloudflare edge, with no change to the container.

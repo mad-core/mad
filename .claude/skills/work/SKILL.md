@@ -125,7 +125,7 @@ Work the plan. Follow all hard rules in `CLAUDE.md`, especially:
 - Hard rule 4 (package layout and hexagonal architecture)
 - Hard rule 5 (no real `claude` CLI or GitHub in tests — use FakeLauncher)
 - Hard rule 9 (HTTP I/O strongly typed — Pydantic body, declared response shape)
-- Hard rule 10 (tests follow the seven heuristics in `docs/testing-heuristics.md`; the `write-test` skill is auto-invoked when modifying any file under `tests/`)
+- Hard rule 10 (tests follow the eight heuristics in `docs/04-conventions/testing-heuristics.md`; the `write-test` skill is auto-invoked when modifying any file under `tests/`)
 
 Work the **entire plan WITHOUT committing**. Every edit stays in the working tree until Step 7.7. The full commit plan is designed at the end with complete diff visibility, by the `commit-planner` subagent — this avoids phase-per-commit inflation (one `feat` per internal slice) and keeps internal scopes (`core`, `events`, `sessions`) out of user-facing commits. See CLAUDE.md hard rule 12 and `.claude/skills/commit/SKILL.md`.
 
@@ -135,7 +135,7 @@ The single exception: if execution stretches across multiple sessions and you ne
 
 ## Step 7.5 — Test review loop (write-test ↔ test-critic)
 
-Tests written during Step 7 MUST pass through the generator/critic loop before the suite is run. This loop enforces `docs/testing-heuristics.md` mechanically; without it, tautological tests, weak assertions, and missing OpenAPI / SSE contract tests slip through (this happened in May 2026 — see the audit referenced in the doc).
+Tests written during Step 7 MUST pass through the generator/critic loop before the suite is run. This loop enforces `docs/04-conventions/testing-heuristics.md` mechanically; without it, tautological tests, weak assertions, and missing OpenAPI / SSE contract tests slip through (this happened in May 2026 — see the audit referenced in the doc).
 
 Run iterations 1, 2, and up to 3 in order. Stop as soon as `test-critic` returns `Verdict: PASS`.
 

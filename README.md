@@ -49,7 +49,7 @@ cp .env.example .env
 docker compose -f compose.example.yml up -d --build
 ```
 
-See [`docs/docker.md`](docs/docker.md) for per-instance credential setup, the
+See [`docs/05-operations/runbooks/docker.md`](docs/05-operations/runbooks/docker.md) for per-instance credential setup, the
 workspace bind-mount model, and running multiple instances.
 
 ## Quickstart
@@ -129,11 +129,11 @@ The "Multi Agent Develop — takes an idea and ships it end-to-end" framing belo
 ## Documentation
 
 - [`docs/adr/`](docs/adr/) — Architecture Decision Records (start at `README.md`).
-- [`docs/backlog.md`](docs/backlog.md) — improvements deferred past v0.1.
-- [`docs/docker.md`](docs/docker.md) — operator's guide for running one or more isolated Mad instances with Docker.
-- [`docs/sandbox-bwrap.md`](docs/sandbox-bwrap.md) — operator's guide for hardening the sandbox with bubblewrap.
-- [`docs/ai-develop-on-issue.md`](docs/ai-develop-on-issue.md) — operator's guide for the label-gated GitHub Action that runs Claude on an issue.
-- [`docs/testing-heuristics.md`](docs/testing-heuristics.md) — the eight heuristics every test must satisfy (hard rule 10).
+- [`docs/08-rfcs/backlog.md`](docs/08-rfcs/backlog.md) — improvements deferred past v0.1.
+- [`docs/05-operations/runbooks/docker.md`](docs/05-operations/runbooks/docker.md) — operator's guide for running one or more isolated Mad instances with Docker.
+- [`docs/05-operations/runbooks/sandbox-bwrap.md`](docs/05-operations/runbooks/sandbox-bwrap.md) — operator's guide for hardening the sandbox with bubblewrap.
+- [`docs/05-operations/runbooks/ai-develop-on-issue.md`](docs/05-operations/runbooks/ai-develop-on-issue.md) — operator's guide for the label-gated GitHub Action that runs Claude on an issue.
+- [`docs/04-conventions/testing-heuristics.md`](docs/04-conventions/testing-heuristics.md) — the eight heuristics every test must satisfy (hard rule 10).
 
 ## License
 

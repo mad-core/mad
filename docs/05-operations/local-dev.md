@@ -19,7 +19,7 @@ From the repo's stated requirements (`README.md`) and the launcher contract
 - **Python >= 3.11.**
 - **Linux host** for production use (the package carries an
   `Operating System :: POSIX :: Linux` classifier). macOS works for most
-  local development; the bubblewrap sandbox (`docs/sandbox-bwrap.md`) is
+  local development; the bubblewrap sandbox (`docs/05-operations/runbooks/sandbox-bwrap.md`) is
   Linux-only.
 - **The `claude` CLI** on `PATH` if you want to drive the default `claude_cli`
   launcher against a live agent. Override the binary with `MAD_CLAUDE_CLI_BIN`.
@@ -79,7 +79,7 @@ local development:
 Note: the `Makefile` targets do not auto-load `.env`. When running `make serve`
 or `mad serve` directly (outside Docker), export the variables you need in your
 shell (or `set -a; . ./.env; set +a`) first. The full `.env` flow is wired up
-for the Docker path described in `docs/docker.md`.
+for the Docker path described in `docs/05-operations/runbooks/docker.md`.
 
 ## Run the server
 
@@ -158,7 +158,7 @@ Tests never hit the real `claude` CLI or GitHub (hard rule 5); they inject a
 `create_app(launcher_factory=...)`. Unit tests live under `tests/unit/`,
 integration tests under `tests/integration/`. A `pytest-timeout` cap (15 s)
 fails any test that hangs, so every test must terminate well below it
-(hard rule 10, `docs/testing-heuristics.md`).
+(hard rule 10, `docs/04-conventions/testing-heuristics.md`).
 
 ## Other quality gates
 
@@ -225,9 +225,9 @@ clean:
 
 ## See also
 
-- `docs/docker.md` — running one or more isolated instances with Docker and the
+- `docs/05-operations/runbooks/docker.md` — running one or more isolated instances with Docker and the
   `.env` flow.
-- `docs/claude-code-mcp.md` — driving Mad over MCP (`/mcp`).
+- `docs/05-operations/runbooks/claude-code-mcp.md` — driving Mad over MCP (`/mcp`).
 - `docs/adr/0008-internal-hook-adapter-and-vocabulary.md` — the internal UDS
   hook adapter and `agent.<provider>.hook.*` vocabulary.
 - `docs/adr/0011-launcher-working-directory.md` — how the launcher's working

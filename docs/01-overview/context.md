@@ -53,7 +53,7 @@ flowchart TB
 The single upstream caller is whoever drives Mad: a human operator with curl
 or a script, or an autonomous AI agent. There is no multi-tenancy and no
 in-process auth — authentication is expected to happen at the edge (e.g. a
-Cloudflare Tunnel with Service-Token Access; see `docs/cloudflare-tunnel.md`).
+Cloudflare Tunnel with Service-Token Access; see `docs/05-operations/runbooks/cloudflare-tunnel.md`).
 The consumer reaches Mad over three request/response surfaces, all backed by
 the **same use cases**:
 

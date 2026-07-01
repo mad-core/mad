@@ -1,3 +1,10 @@
+---
+service: mad
+domain: backend
+section: conventions
+source_of_truth: repo
+---
+
 # Testing heuristics — `mad`
 
 These are the rules every test in this repo must satisfy. They were derived from a critical audit (May 2026) that found ~50 tests across the suite suffering from one or more of the patterns below — including a test that **codified a real bug as the contract** (`test_stream_route_rejects_invalid_last_event_id`, since rewritten).
@@ -16,41 +23,43 @@ Any `test_endpoint_X_happy_path` requires a sibling `test_endpoint_X_rejects_<ma
 
 **Why.** Happy-path-only tests pass for any implementation that returns `200 {}`. They never catch validation regressions, never document the failure contract, and leave the client guessing.
 
-**Bad** (`tests/integration/api/test_sessions_http.py:132-155` — only happy + 404 for `/messages`):
+**Bad** (illustrative — not drawn from a current file):
 ```python
 def test_send_message_happy(...):
     r = client.post(f"/v1/sessions/{sid}/messages", json={"content": "hi"})
     assert r.status_code in (200, 202)  # also bad — see rule 2
 ```
 
-**Good** (negative twin):
+**Good** (real negative twin — `tests/integration/api/test_sessions_http.py:605`, `test_openapi_post_messages_rejects_missing_content`):
 ```python
-def test_send_message_rejects_missing_content(...):
-    r = client.post(f"/v1/sessions/{sid}/messages", json={})
+def test_openapi_post_messages_rejects_missing_content(client, fake_launcher, session_payload):
+    fake_launcher.script([[{"type": "session.status_idle", "stop_reason": "end_turn"}]])
+    session_id = client.post("/v1/sessions", json=session_payload).json()["session_id"]
+    r = client.post(f"/v1/sessions/{session_id}/messages", json={})
     assert r.status_code == 422
-    assert r.json()["detail"][0]["loc"] == ["body", "content"]
+    detail = r.json()["detail"]
+    assert any(d.get("loc") == ["body", "content"] for d in detail)
 ```
 
 ### 2. One contract per test — no `or`, no `in (200, 202)`
 
 If your assertion accepts two status codes or two body shapes, you are documenting two contracts and validating neither. Pin the actual contract; if the code legitimately returns two things in different contexts, write two tests.
 
-**Bad** (`tests/integration/api/test_sessions_http.py:340`):
+**Bad** (illustrative — not drawn from a current file):
 ```python
 assert isinstance(body, list) or "sessions" in body
 ```
 
-**Bad** (`tests/integration/api/test_sessions_http.py:62`):
+**Bad** (illustrative — not drawn from a current file):
 ```python
 assert data["session_id"].startswith("sesn_") or len(data["session_id"]) > 0
 # the `or` clause makes the first one redundant; any non-empty string passes
 ```
 
-**Good:**
+**Good** (real — `tests/integration/api/test_sessions_http.py:58-66`, `test_mvp_01_create_session_response_shape`):
 ```python
-assert isinstance(body, list)
-assert all(isinstance(s, dict) for s in body)
-assert all(s["session_id"].startswith("sesn_") for s in body)
+assert isinstance(data["session_id"], str) and len(data["session_id"]) > 0
+assert data["session_id"].startswith("sesn_")
 ```
 
 ### 3. Fakes live in `tests/support/`, never inline in a test file
@@ -59,18 +68,37 @@ A `FakeRepo` redefined inside `test_create_session.py` with `events.append({"typ
 
 If you need a fake, put it in `tests/support/<port>.py` and share it across all tests that depend on the port. The fake should be **stricter** than production where ambiguity exists (reject unknown keys, validate timestamps), so a test with the fake will fail loudly if the production contract drifts.
 
-**Bad pattern:** every file under `tests/unit/core/sessions/use_cases/` defines its own `FakeRepo` (~25-30 tests). See `test_create_session.py:34-65`, `test_send_user_message.py:31-66`, `test_get_session.py:12-25`.
+**Bad** (illustrative — not drawn from a current file; this repo's suite no longer has any inline `class Fake*` outside `tests/support/`):
+```python
+# tests/unit/core/sessions/use_cases/test_create_session.py
+class FakeRepo:
+    def __init__(self):
+        self.events = []
+    def append_event(self, session_id, type, data):
+        self.events.append({"type": type, **data})
+```
 
-**Good pattern:** `tests/support/events.py` defines `InMemoryEventStore` once; every event-module test imports it.
+**Good** (real — every use-case test imports the shared doubles instead of redefining them):
+```python
+# tests/unit/core/sessions/use_cases/test_create_session.py:18-19
+from support.events import FakeEventBus
+from support.sessions import FakeProvisioner, FakeSessionRepository
+```
 
-### 4. Aserción débil → segunda aserción específica al lado
+`tests/support/sessions.py` defines `FakeSessionRepository` / `FakeProvisioner` once; `tests/support/events.py` defines `FakeEventStore` / `FakeEventBus` / `FakeEventLogQuery` once. Every session and event test imports these instead of redefining its own.
+
+### 4. Weak assertion → pair it with a specific second assertion
 
 `assert "key" in dict`, `assert isinstance(x, list)`, `assert len(x) > 0` are *necessary* but never *sufficient*. They prove the response has shape, not value. Pair every weak assertion with a value-level assertion in the same test.
 
-**Bad** (`tests/integration/persistence/test_session_recovery.py:39-44`):
+**Bad** (real — `tests/integration/persistence/test_session_recovery.py:39-44`; this test still only checks that the recovered event *type* is present, never a specific field value on the recovered event):
 ```python
-assert len(events) > 0
-assert "session.created" in event_types
+events = r2.json().get("events", [])
+assert len(events) > 0, "Recovered session must have at least one event from the JSONL log"
+event_types = {e.get("type") for e in events}
+assert "session.created" in event_types, (
+    f"Expected session.created in recovered events, got: {event_types}"
+)
 ```
 
 **Good:**
@@ -92,17 +120,20 @@ Every `POST` / `PUT` route MUST have a test that opens `/openapi.json` and asser
 
 This is the test that would have caught the original "Postman shows no body schema" bug. Three lines, mechanical.
 
-**Reference test:**
+**Reference test** (real — `tests/integration/api/test_sessions_http.py:566-585`, `test_openapi_post_sessions_declares_body_schema`):
 ```python
-def test_post_sessions_declares_body_schema(http_client):
-    spec = http_client.get("/openapi.json").json()
-    body = spec["paths"]["/v1/sessions"]["post"]["requestBody"]
+def test_openapi_post_sessions_declares_body_schema(client: TestClient) -> None:
+    spec = client.get("/openapi.json").json()
+    op = spec["paths"]["/v1/sessions"]["post"]
+    body = op["requestBody"]
     assert body["required"] is True
+
     schema = body["content"]["application/json"]["schema"]
-    # FastAPI emits a $ref; resolve it
-    ref = schema["$ref"].rsplit("/", 1)[-1]
-    component = spec["components"]["schemas"][ref]
-    assert "agent" in component["required"]
+    component = _resolve_ref(spec, schema["$ref"])
+    required = set(component.get("required", []))
+    assert "agent" in required, (
+        f"CreateSessionRequest must mark 'agent' required; got required={required}"
+    )
 ```
 
 ### 6. SSE / streaming endpoints — never test only the helper, never hit the live infinite stream
@@ -115,40 +146,57 @@ The acceptable patterns, in order of preference:
 2. **Read one frame, then close, with a hard `@pytest.mark.timeout`.** Only use this if the route emits at least one frame immediately. Set `@pytest.mark.timeout(5)` so a regression in the close path fails fast instead of hanging.
 3. **Helper-only test, *plus* a route smoke test that does not stream.** If the route opens a long-lived stream by design and you cannot bound it from the test, keep the helper unit test for parsing logic AND add a route-level test that asserts wiring (e.g., `app.routes` contains the path, or call the route function directly with a scoped fake) — never `c.stream(...)` against the live infinite generator.
 
+**Pattern 1 — bounded source (real, trimmed from `tests/integration/api/test_events_http.py:305-330`, `test_stream_does_not_emit_heartbeat_when_events_flow_under_interval`):**
 ```python
-# Pattern 1 — bounded source (preferred)
-async def test_stream_emits_event_for_invalid_last_event_id(app_with_bounded_bus):
-    transport = httpx.ASGITransport(app=app_with_bounded_bus)
-    async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
-        async with c.stream("GET", "/v1/events/stream",
-                            headers={"Last-Event-ID": "not-a-uuid"}) as r:
-            assert r.status_code == 200
-            frames = [chunk async for chunk in r.aiter_text()]
-    assert any("event: " in f for f in frames)
+bus = FakeEventBus()
+log = FakeEventLogQuery()
+
+async def publisher() -> None:
+    await _wait_for_subscription(bus)
+    for i in range(3):
+        await bus.publish(_make_event("sesn_a", "agent.output", {"line": f"frame-{i}"}))
+        await asyncio.sleep(0.05)
+    await bus.close_subscriber()  # <- lets the route's generator complete
+
+pub_task = asyncio.create_task(publisher())
+try:
+    response = await _stream_with_injected_bus(bus, log)
+finally:
+    if not pub_task.done():
+        pub_task.cancel()
+
+assert response.status_code == 200
+assert response.text.count("data:") == 3
 ```
+
+`bus.close_subscriber()` is what makes this a *bounded* source — the fake event bus's generator terminates on its own once closed, instead of the test relying on `stream(...)` to abort an infinite one.
 
 ### 7. Polling waits on state, never on time
 
 `time.sleep(0.2)` followed by `assert len(calls) == 2` is flaky AND wrong: the test passes because *time elapsed*, not because the system reached the right state. Poll on a state predicate (event in log, status terminal) with a deadline, and after the loop assert the **outcome**, not the call count.
 
-**Bad** (`tests/integration/api/test_native_tool_use.py:62`):
+**Bad** (illustrative — not drawn from a current file; this repo's suite has no remaining bare-`sleep`-then-assert pattern):
 ```python
 client.post(...)
 time.sleep(0.2)
 assert "agent.output" in [e["type"] for e in events]
 ```
 
-**Good:**
+**Good** (real — `tests/integration/api/test_native_tool_use.py:60-73`, `test_launcher_output_lines_emitted_as_agent_output`):
 ```python
-client.post(...)
-deadline = time.monotonic() + 2.0
+# Poll on state, not time (rule 7): wait until the launcher completes
+# and session.status_idle is appended to the log.
+log_path = tmp_sessions_dir / f"{session_id}.jsonl"
+deadline = time.monotonic() + 5.0
+lines: list[dict] = []
 while time.monotonic() < deadline:
-    if "session.status_idle" in [e["type"] for e in read_log(sid)]:
-        break
+    if log_path.exists():
+        lines = [json.loads(ln) for ln in log_path.read_text().splitlines() if ln.strip()]
+        if any(e.get("type") == "session.status_idle" for e in lines):
+            break
     time.sleep(0.05)
-events = read_log(sid)
-assert "session.status_idle" in [e["type"] for e in events], (
-    f"expected session.status_idle, got: {[e['type'] for e in events]}"
+assert any(e.get("type") == "session.status_idle" for e in lines), (
+    f"expected session.status_idle within deadline; got types={[e.get('type') for e in lines]}"
 )
 ```
 
@@ -198,7 +246,7 @@ If any box is unchecked, the test is debt. Fix it or document why this case is e
 
 ## How this is enforced
 
-1. **`CLAUDE.md` hard rule 11** — points to this doc and forbids the worst patterns.
+1. **`CLAUDE.md` hard rule 10** — points to this doc and forbids the worst patterns.
 2. **`.claude/skills/write-test/SKILL.md`** — auto-loaded when Claude writes or modifies tests; embeds this checklist.
 3. **`.claude/agents/test-critic.md`** — reviewer agent applied at `/work` step 7.5; mechanically checks each rule against the diff.
 4. **`/work` step 7.5** — generator/critic loop: `write-test` agent → `test-critic` agent → re-iterate up to 3 times → AskUserQuestion if still not converged.

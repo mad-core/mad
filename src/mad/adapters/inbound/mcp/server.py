@@ -160,8 +160,9 @@ def _transport_security() -> TransportSecuritySettings:
     Cloudflare Tunnel hostname this adapter is designed to be reached
     through. That contradicts Mad's deliberate posture: the security
     boundary is Cloudflare Access at the edge plus the loopback bind,
-    and Mad's source tree carries no auth (docs/cloudflare-tunnel.md,
-    ADR-0006, ADR-0010). DNS-rebinding protection guards browser-driven
+    and Mad's source tree carries no auth
+    (docs/05-operations/runbooks/cloudflare-tunnel.md, ADR-0006, ADR-0010).
+    DNS-rebinding protection guards browser-driven
     *local* servers; it is not the control for a token-gated tunnel.
 
     So protection is OFF by default. Operators who want in-process

@@ -59,7 +59,7 @@ single write path (hard rule 11).
 
 ## Section registry
 
-All nine `/docs` sections are declared in
+All ten `/docs` sections are declared in
 [`docs/.docs-manifest.yaml`](../.docs-manifest.yaml) (plus the `meta` section).
 
 | # | Section | Present | Key pages |
@@ -74,3 +74,4 @@ All nine `/docs` sections are declared in
 | 07 | decisions | yes | `README.md` (indexes `docs/adr/`) |
 | 08 | rfcs | yes | `README.md` |
 | 09 | history | yes | changelog, migrations |
+| 10 | user-manuals | yes | README (index), getting-started, sessions, events, queue-and-scheduling, workflows, choosing-agent-and-model, connecting-your-tools |

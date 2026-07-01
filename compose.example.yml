@@ -6,7 +6,7 @@
 #
 # Run a SECOND fully-isolated instance WITHOUT editing this file — point compose
 # at a different env-file and project name (each gets its own secrets, workspace
-# dir and port; see docs/docker.md):
+# dir and port; see docs/05-operations/runbooks/docker.md):
 #   cp .env .env.beta             # set MAD_INSTANCE=beta, MAD_HOST_PORT=8081, …
 #   docker compose -f compose.example.yml --env-file .env.beta -p mad-beta up -d
 #

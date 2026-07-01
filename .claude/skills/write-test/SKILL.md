@@ -1,17 +1,17 @@
 ---
 name: write-test
-description: Use when writing, adding, or modifying pytest tests in this repo. Loads the eight testing heuristics from docs/testing-heuristics.md and enforces a pre-merge checklist that prevents tautological tests, weak assertions, inline fakes, time-based waits, and missing OpenAPI / SSE contract tests. Triggers on tasks like "add tests for X", "improve coverage", "fix the failing test", or any change under tests/.
+description: Use when writing, adding, or modifying pytest tests in this repo. Loads the eight testing heuristics from docs/04-conventions/testing-heuristics.md and enforces a pre-merge checklist that prevents tautological tests, weak assertions, inline fakes, time-based waits, and missing OpenAPI / SSE contract tests. Triggers on tasks like "add tests for X", "improve coverage", "fix the failing test", or any change under tests/.
 ---
 
 # write-test
 
-You are about to write or modify tests in `mad`. Before writing a single line, load and apply `docs/testing-heuristics.md`. Tests that violate these heuristics are debt — they will be rejected by the `test-critic` agent and by human review.
+You are about to write or modify tests in `mad`. Before writing a single line, load and apply `docs/04-conventions/testing-heuristics.md`. Tests that violate these heuristics are debt — they will be rejected by the `test-critic` agent and by human review.
 
 ## Procedure
 
 ### 1. Load the heuristics
 
-Read `docs/testing-heuristics.md` completely. Internalize the eight rules; they govern every test you write.
+Read `docs/04-conventions/testing-heuristics.md` completely. Internalize the eight rules; they govern every test you write.
 
 ### 2. Identify the contract under test
 
@@ -25,7 +25,7 @@ If you cannot answer all three, stop and ask the user via `AskUserQuestion` (CLA
 
 ### 3. Write the test
 
-Apply rules 1–8 from `docs/testing-heuristics.md`:
+Apply rules 1–8 from `docs/04-conventions/testing-heuristics.md`:
 
 1. Negative twin alongside happy path.
 2. One contract per test — no `or`, no `in (200, 202)`.
@@ -38,7 +38,7 @@ Apply rules 1–8 from `docs/testing-heuristics.md`:
 
 ### 4. Self-review against the checklist
 
-Before marking the work done, walk the pre-merge checklist in `docs/testing-heuristics.md`. For each unchecked item: either fix the test or note in the PR body why the case is exempt.
+Before marking the work done, walk the pre-merge checklist in `docs/04-conventions/testing-heuristics.md`. For each unchecked item: either fix the test or note in the PR body why the case is exempt.
 
 ### 5. Hand off to test-critic
 

@@ -1,10 +1,18 @@
+---
+service: mad
+domain: backend
+section: operations
+source_of_truth: repo
+---
+
 # TestPyPI preview builds — operator guide
 
 Every pull request against `main` can publish a throwaway **pre-release** of
 `mad-bros` to [TestPyPI](https://test.pypi.org/) so the *exact built artifact*
 is installable with `pip` before it is ever released to the real index.
 
-The workflow is [`.github/workflows/testpypi-preview.yml`](../.github/workflows/testpypi-preview.yml).
+The workflow is [`.github/workflows/testpypi-preview.yml`](../../../.github/workflows/testpypi-preview.yml).
+See [`../ci-cd.md`](../ci-cd.md) for how this job fits into the full pipeline.
 
 ## Why this exists
 
@@ -42,7 +50,7 @@ version (the generated install command pins it).
 
 The version edit is made in-CI only and is **never committed** — `main` stays at
 its static version and real releases continue to flow through
-[`release.yml`](../.github/workflows/release.yml).
+[`release.yml`](../../../.github/workflows/release.yml).
 
 ## One-time setup
 

@@ -7,11 +7,11 @@ source_of_truth: repo
 
 # Known Issues and Limitations
 
-Known tech debt and current limitations — authored, honest. Mirror/curate from docs/backlog.md and the open issues that matter to operators.
+Known tech debt and current limitations — authored, honest. Mirror/curate from docs/08-rfcs/backlog.md and the open issues that matter to operators.
 
 This page is for operators running a Mad instance. It lists the limitations you
 will actually hit in production, plus the notable deferred work from
-[`docs/backlog.md`](../backlog.md). It is curated, not a full backlog dump — for
+[`docs/08-rfcs/backlog.md`](../08-rfcs/backlog.md). It is curated, not a full backlog dump — for
 the complete deferred list read the backlog directly, and for live status check
 the open issues on GitHub.
 
@@ -105,10 +105,10 @@ If you run Mad for more than one consumer, isolate them at the deployment level
 
 Mad ships no authentication layer. Auth is expected at the edge — the documented
 deployment puts Mad behind a Cloudflare Tunnel with Service-Token-based
-Cloudflare Access (`docs/cloudflare-tunnel.md`). The MCP DNS-rebinding guard
+Cloudflare Access (`docs/05-operations/runbooks/cloudflare-tunnel.md`). The MCP DNS-rebinding guard
 (`MAD_MCP_ALLOWED_HOSTS`) is off by default for the same reason. Do **not**
-expose a Mad instance directly to an untrusted network. Backlog: "Autenticación
-de la API".
+expose a Mad instance directly to an untrusted network. Backlog: "API
+authentication".
 
 ### OpenCode hook capture is not wired
 
@@ -139,7 +139,7 @@ events.
 ## Scaling limitations (from the backlog)
 
 These are architectural limits that bite as the instance grows. Full write-ups
-in [`docs/backlog.md`](../backlog.md).
+in [`docs/08-rfcs/backlog.md`](../08-rfcs/backlog.md).
 
 - **Event log doubles as projected state.** Rehydrating state replays the full
   per-session JSONL, and `GET /v1/sessions` scans the entire sessions directory.
@@ -157,9 +157,9 @@ the backlog and open feature issues:
 
 - **Sequential multi-session workflows** — chaining agents with branch
   propagation. Tracked as feat [#90](https://github.com/) (priority: high) and
-  backlog item "Workflows multi-sesión".
+  backlog item "Multi-session workflows".
 - **Docker-per-session sandbox** — ephemeral containers instead of the current
-  bwrap/direct-subprocess model (see `docs/sandbox-bwrap.md`).
+  bwrap/direct-subprocess model (see `docs/05-operations/runbooks/sandbox-bwrap.md`).
 - **Encrypted vaults** for credentials instead of passing them in request JSON.
 - **Scheduler / cron** for recurring sessions.
 - **Web dashboard**.

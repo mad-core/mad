@@ -28,7 +28,7 @@ is as much in what it refuses to own as in what it provisions.
 | No LLM-response / tool-call parsing | The external agent | Hard rule 1 |
 | No multi-tenancy (yet) | Deployment boundary / future module | ADR-0006 |
 | No orchestration or event translation in the events module | A future `core/orchestration/` module | Hard rule 8, ADR-0004 |
-| No in-app authentication | The Cloudflare edge | ADR-0010, `docs/cloudflare-tunnel.md` |
+| No in-app authentication | The Cloudflare edge | ADR-0010, `docs/05-operations/runbooks/cloudflare-tunnel.md` |
 | No token persistence | — (tokens are stripped after clone) | Hard rule 2 |
 | No path escape from the workspace | — (rejected before any filesystem op) | Hard rule 3 |
 
@@ -111,7 +111,7 @@ edge keeps the application surface focused on the infrastructure job and lets
 operators choose their own access model. The MCP adapter explicitly relies on
 this: DNS-rebinding protection (`MAD_MCP_ALLOWED_HOSTS`) is off by default
 because auth lives at the edge.
-*(ADR-0010; operator guide: `docs/cloudflare-tunnel.md`, `docs/claude-code-mcp.md`.)*
+*(ADR-0010; operator guide: `docs/05-operations/runbooks/cloudflare-tunnel.md`, `docs/05-operations/runbooks/claude-code-mcp.md`.)*
 
 ## Adjacent boundaries (security non-goals)
 

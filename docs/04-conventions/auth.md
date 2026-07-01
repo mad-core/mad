@@ -31,7 +31,7 @@ Cloudflare's edge, and a Cloudflare Access policy rejects every request that
 does not present a valid Service Token (`CF-Access-Client-Id` /
 `CF-Access-Client-Secret` headers). Mad never sees an unauthenticated request.
 The full operator recipe — tunnel, Access application, Service Token minting,
-verification — is in [`docs/cloudflare-tunnel.md`](../cloudflare-tunnel.md).
+verification — is in [`docs/05-operations/runbooks/cloudflare-tunnel.md`](../05-operations/runbooks/cloudflare-tunnel.md).
 
 Two structural facts make this posture safe:
 
@@ -73,7 +73,7 @@ pass the edge (ADR-0006, multi-tenancy deferred). There are no roles, scopes,
 or per-caller event isolation: any authenticated client of a shared instance
 would see every other client's session log. The recommended pattern for
 multiple users is **one Mad instance and one tunnel hostname per user**, not a
-shared instance — see [`docs/cloudflare-tunnel.md`](../cloudflare-tunnel.md)
+shared instance — see [`docs/05-operations/runbooks/cloudflare-tunnel.md`](../05-operations/runbooks/cloudflare-tunnel.md)
 ("Future expansion") and [ADR-0006](../adr/0006-multi-tenancy-deferred.md).
 
 ## `MAD_MCP_ALLOWED_HOSTS` — opt-in DNS-rebinding protection
@@ -141,7 +141,7 @@ A caveat worth surfacing for operators: the clone token still transits the
 Cloudflare edge inside the request body. Cloudflare's defaults do not log
 request bodies, but the token is observable by Cloudflare in principle — treat
 it as such and rotate on a schedule (see "Request body privacy" in
-[`docs/cloudflare-tunnel.md`](../cloudflare-tunnel.md)).
+[`docs/05-operations/runbooks/cloudflare-tunnel.md`](../05-operations/runbooks/cloudflare-tunnel.md)).
 
 ## When this changes
 
@@ -161,6 +161,6 @@ in-app auth — supersede the ADR first.
   assumption; multi-tenancy deferred.
 - [ADR-0008](../adr/0008-internal-hook-adapter-and-vocabulary.md) — internal
   hook adapter on a local-only UDS, never tunneled.
-- [`docs/cloudflare-tunnel.md`](../cloudflare-tunnel.md) — operator guide for
+- [`docs/05-operations/runbooks/cloudflare-tunnel.md`](../05-operations/runbooks/cloudflare-tunnel.md) — operator guide for
   Service-Token Access at the edge.
 - CLAUDE.md hard rule 2 — token hygiene.

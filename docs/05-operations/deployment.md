@@ -14,8 +14,8 @@ internet via a Cloudflare Tunnel. Environments, deploy strategy, and rollback
 are covered at the end.
 
 Two operator guides go deeper than this overview and are the authoritative
-how-to references: [`docs/docker.md`](../docker.md) for the container/compose
-model and [`docs/cloudflare-tunnel.md`](../cloudflare-tunnel.md) for internet
+how-to references: [`docs/05-operations/runbooks/docker.md`](runbooks/docker.md) for the container/compose
+model and [`docs/05-operations/runbooks/cloudflare-tunnel.md`](runbooks/cloudflare-tunnel.md) for internet
 exposure. This page maps the moving parts and links out.
 
 ## What ships
@@ -29,7 +29,7 @@ Mad is distributed two ways, from the same source tree:
 2. **A self-built container image.** The repo ships the *scaffolding* only —
    `Dockerfile`, `compose.example.yml`, `.env.example`. There is **no published
    registry image**; each host builds its own image from the `Dockerfile`
-   (`docs/docker.md`). The image bundles `mad-bros` plus the agent CLIs the
+   (`docs/05-operations/runbooks/docker.md`). The image bundles `mad-bros` plus the agent CLIs the
    launchers shell out to.
 
 No secret is ever baked into an image layer or committed (CLAUDE.md hard rule 2);
@@ -92,7 +92,7 @@ docker buildx build --platform linux/arm64,linux/amd64 -t mad:0.5.11 .
 
 `compose.example.yml` defines **one isolated instance** and is parameterized so
 multiple fully-isolated instances run on a single host. The full guide is
-[`docs/docker.md`](../docker.md); the load-bearing knobs:
+[`docs/05-operations/runbooks/docker.md`](runbooks/docker.md); the load-bearing knobs:
 
 | Variable | Role |
 |---|---|
@@ -121,7 +121,7 @@ and open PRs. This is distinct from the **per-request clone token**, which
 arrives in the create-session body and is stripped from the git remote and
 redacted from the log (CLAUDE.md hard rule 2).
 
-Two patterns run a second instance (details in `docs/docker.md`): a separate
+Two patterns run a second instance (details in `docs/05-operations/runbooks/docker.md`): a separate
 env-file plus project name (`--env-file .env.beta -p mad-beta`, recommended for
 separate secrets), or the commented-out copy-paste service block in the compose
 file.
@@ -142,7 +142,27 @@ file.
 - **Version source.** `version_toml = ["pyproject.toml:project.version"]` and
   `version_variables = ["src/mad/__init__.py:__version__"]` — semantic-release
   bumps both in lockstep (`src/mad/__init__.py` currently `0.5.19`). Tags use
-  `tag_format = "v{version}"`.
+  `tag_format = "v{version}"`. Preview the next version locally, without
+  pushing, with `semantic-release version --print`.
+- **PyPI Trusted Publisher (one-time operator setup).** `publish-pypi`
+  authenticates via [PyPI Trusted Publishing](https://docs.pypi.org/trusted-publishers/)
+  (OIDC) — no long-lived API token is stored in the repo. Register the
+  publisher on the production index, at
+  https://pypi.org/manage/account/publishing/, **before** the first release
+  (PyPI allows creating a "pending publisher" even when the project name
+  doesn't exist yet):
+
+  | Field | Value |
+  |---|---|
+  | PyPI project name | `mad-bros` |
+  | Owner | `mad-core` |
+  | Repository name | `mad` |
+  | Workflow filename | `release.yml` |
+  | Environment name | `pypi` |
+
+  If `publish-pypi` fails with `invalid-publisher`, the trusted publisher on
+  PyPI doesn't match `owner/repo/workflow/environment` — recheck the four
+  fields above.
 - **Bump policy (CLAUDE.md hard rule 12).** `feat` is demoted to a **patch**
   (`patch_tags = ["feat", "fix", "perf"]`, `minor_tags = []`), so ordinary
   conventional commits auto-publish a patch on `0.x`. Minor/major bumps require
@@ -181,7 +201,7 @@ install instructions onto the PR.
 Mad has **no auth middleware** in its source tree. Internet exposure is done with
 a **Cloudflare Tunnel** and **Cloudflare Access Service Tokens**, where
 authentication happens at the edge, not in Mad. The full operator guide is
-[`docs/cloudflare-tunnel.md`](../cloudflare-tunnel.md). The shape:
+[`docs/05-operations/runbooks/cloudflare-tunnel.md`](runbooks/cloudflare-tunnel.md). The shape:
 
 - `cloudflared` opens an outbound-only persistent connection to Cloudflare's
   edge and proxies a hostname you own back to local Mad.
@@ -198,20 +218,20 @@ authentication happens at the edge, not in Mad. The full operator guide is
 > execution as the Mad uid by design. When Mad is internet-addressable,
 > Cloudflare Access is the only thing between the public and a remote shell.
 > Configure the Access policy **before** the hostname is routable
-> (`docs/cloudflare-tunnel.md` threat model).
+> (`docs/05-operations/runbooks/cloudflare-tunnel.md` threat model).
 
 ## Environments
 
 | Environment | What runs | How |
 |---|---|---|
 | **Local dev** | The package from an editable checkout | `make install` then `make serve` (also starts the internal UDS uvicorn). |
-| **Self-hosted instance** | The container image, one or more isolated instances | `compose.example.yml` per `docs/docker.md`; typically a Raspberry Pi or dev host. |
+| **Self-hosted instance** | The container image, one or more isolated instances | `compose.example.yml` per `docs/05-operations/runbooks/docker.md`; typically a Raspberry Pi or dev host. |
 | **PyPI (`pypi`)** | The published `mad-bros` package | `release.yml` → `publish-pypi`, Trusted Publishing. |
 | **TestPyPI (`testpypi`)** | Pre-release `.dev` previews per PR | `testpypi-preview.yml`, gated on `TESTPYPI_ENABLED`. |
 
 There is no shared multi-tenant environment: multi-tenancy is deferred
 (ADR-0006), and the recommended pattern for multiple users is one instance and
-one tunnel hostname per user (`docs/cloudflare-tunnel.md`).
+one tunnel hostname per user (`docs/05-operations/runbooks/cloudflare-tunnel.md`).
 
 ## Deploy strategy
 
@@ -247,8 +267,8 @@ Rollback is **pin a prior release/tag**:
 
 ## See also
 
-- [`docs/docker.md`](../docker.md) — full container/compose operator guide.
-- [`docs/cloudflare-tunnel.md`](../cloudflare-tunnel.md) — internet exposure,
+- [`docs/05-operations/runbooks/docker.md`](runbooks/docker.md) — full container/compose operator guide.
+- [`docs/05-operations/runbooks/cloudflare-tunnel.md`](runbooks/cloudflare-tunnel.md) — internet exposure,
   Access policy, SSE caveats.
 - [`docs/05-operations/ci-cd.md`](ci-cd.md) — the full pipeline stage listing.
 - [`docs/05-operations/configuration.md`](configuration.md) — the `MAD_*`

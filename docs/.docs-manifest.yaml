@@ -114,7 +114,7 @@ docs:
     type: manual
   adapted_heuristic: |
     Re-author the operations catalog when: (1) a new use case is added under any `src/mad/core/*/use_cases/` subpackage (add one row per use case), (2) an HTTP endpoint is added/removed/renamed under `src/mad/adapters/inbound/http/routes/` (keep HTTP and MCP tools in parity per hard rule 13), (3) a tool is added/removed/renamed in `src/mad/adapters/inbound/mcp/server.py` (mirroring the HTTP boundary), or (4) a background component (lifespan-managed asyncio task, app-startup hook, or other no-request-surface operation) is added/removed/renamed that performs observable side effects. Cross-reference each row with its corresponding HTTP route or MCP tool, verify the operation's trigger, and re-describe the observable side effects (events, workspace actions). Ensure HTTP/MCP parity is maintained and the operation's bounded context (sessions, events, orchestration) is accurately placed.
-  acknowledged_at_commit: 7d0cd9b75d2c7b08deba5bdc9f4260d54437e1b8
+  acknowledged_at_commit: 13efb04a7db2cca88d9f8091f9309ebc0dfada72
 - path: docs/01-overview/scope.md
   section: overview
   kind: manual
@@ -188,7 +188,7 @@ docs:
     type: manual
   adapted_heuristic: |
     Re-author when a new bounded context appears under `core/`, a new adapter group under `adapters/inbound/` or `adapters/outbound/`, or a new port Protocol under `core/*/ports/`. Renames inside an existing module are captured by source-tree.md and do NOT need a rewrite.
-  acknowledged_at_commit: 7d0cd9b75d2c7b08deba5bdc9f4260d54437e1b8
+  acknowledged_at_commit: 13efb04a7db2cca88d9f8091f9309ebc0dfada72
 - path: docs/02-architecture/data-model.md
   section: architecture
   kind: heuristic
@@ -388,7 +388,7 @@ docs:
     Re-author when a runtime dependency in `pyproject.toml` changes, when a new
     outbound adapter (launcher provider) appears under `outbound/agents/`, or
     when the spawn contract / timeout handling in a launcher changes.
-  acknowledged_at_commit: 7d0cd9b75d2c7b08deba5bdc9f4260d54437e1b8
+  acknowledged_at_commit: 13efb04a7db2cca88d9f8091f9309ebc0dfada72
 
 # ---- 04 conventions -----------------------------------------------------
 - path: docs/04-conventions/api-design.md
@@ -411,7 +411,7 @@ docs:
     type: manual
   adapted_heuristic: |
     Re-author when route prefixes/tags change, when a route stops declaring a Pydantic body/response_model (hard rule 9 violation), when the HTTP<->MCP parity rule (hard rule 13, ADR-0012) is affected, or when new router modules are added to the five-module table.
-  acknowledged_at_commit: 7d0cd9b75d2c7b08deba5bdc9f4260d54437e1b8
+  acknowledged_at_commit: 13efb04a7db2cca88d9f8091f9309ebc0dfada72
 - path: docs/04-conventions/auth.md
   section: conventions
   kind: heuristic
@@ -435,8 +435,8 @@ docs:
     Re-author when `MAD_MCP_ALLOWED_HOSTS` handling changes, when any in-app
     auth is introduced (today there is none — edge only), or when the token
     hygiene flow (clone token stripped from the remote, hard rule 2) changes.
-    Cross-reference docs/cloudflare-tunnel.md.
-  acknowledged_at_commit: 7d0cd9b75d2c7b08deba5bdc9f4260d54437e1b8
+    Cross-reference docs/05-operations/runbooks/cloudflare-tunnel.md.
+  acknowledged_at_commit: 13efb04a7db2cca88d9f8091f9309ebc0dfada72
 - path: docs/04-conventions/error-handling.md
   section: conventions
   kind: heuristic
@@ -502,29 +502,47 @@ docs:
     Re-author when `[tool.ruff]`, `[tool.mypy]`, `[tool.importlinter]`, or
     `[tool.coverage]` in pyproject.toml change, or when a pre-commit hook is
     added/removed. Cross-reference ADR-0002.
-  acknowledged_at_commit: 7d0cd9b75d2c7b08deba5bdc9f4260d54437e1b8
+  acknowledged_at_commit: 13efb04a7db2cca88d9f8091f9309ebc0dfada72
 - path: docs/04-conventions/testing-strategy.md
   section: conventions
   kind: heuristic
   description: |
     Test layers (unit/integration/e2e), the eight testing heuristics
-    (docs/testing-heuristics.md), coverage expectations, and the fakes-in-
-    tests/support convention (ADR-0001, ADR-0003).
+    (docs/04-conventions/testing-heuristics.md), coverage expectations, and the
+    fakes-in-tests/support convention (ADR-0001, ADR-0003).
   triggers:
     discovery_hint: |
       The test root and the test config / heuristics docs this repo uses.
     paths:
     - tests/**
     - pyproject.toml
-    - docs/testing-heuristics.md
+    - docs/04-conventions/testing-heuristics.md
     hint: |
       Test infrastructure or the heuristics changed — verify
       testing-strategy.md.
   produces:
     type: manual
   adapted_heuristic: |
-    Re-author when test-layer layout under `tests/` reorganizes, when coverage thresholds in CI/pyproject change, when docs/testing-heuristics.md changes the eight rules, or when new AgentLauncher or orchestration doubles are added to tests/support/. Document all shared doubles explicitly by type and purpose; Fakes live in tests/support (ADR-0003).
-  acknowledged_at_commit: 7d0cd9b75d2c7b08deba5bdc9f4260d54437e1b8
+    Re-author when test-layer layout under `tests/` reorganizes, when coverage thresholds in CI/pyproject change, when docs/04-conventions/testing-heuristics.md changes the eight rules, or when new AgentLauncher or orchestration doubles are added to tests/support/. Document all shared doubles explicitly by type and purpose; Fakes live in tests/support (ADR-0003).
+  acknowledged_at_commit: 13efb04a7db2cca88d9f8091f9309ebc0dfada72
+- path: docs/04-conventions/testing-heuristics.md
+  section: conventions
+  kind: manual
+  description: |
+    The eight operational testing heuristics (negative twins, single-contract
+    assertions, fakes in `tests/support/`, OpenAPI + SSE contract tests,
+    state-based polling, bounded termination) plus the pre-merge checklist
+    and enforcement chain (hard rule 10, write-test/test-critic loop).
+  triggers:
+    discovery_hint: |
+      Judgement-derived testing doctrine, curated from audits of the suite.
+      Not mechanically derivable from a single source path. Track by age.
+    paths: []
+    max_age_days: 180
+  produces:
+    type: manual
+  adapted_heuristic: null
+  acknowledged_at_commit: 2151b5631d1aff540c1c172229e3f5c778a1c6b1
 
 # ---- 05 operations ------------------------------------------------------
 - path: docs/05-operations/ci-cd.md
@@ -556,7 +574,7 @@ docs:
     Re-author when any file under `.github/workflows/` is added, removed, or
     materially changed. Keep the job/step listing in sync with `gen_docs ci-cd`
     and explain what each gate enforces (hard rule 12 versioning policy).
-  acknowledged_at_commit: 1589bf78aa2f26aa2f99c505819402e5b3020f46
+  acknowledged_at_commit: 13efb04a7db2cca88d9f8091f9309ebc0dfada72
 # `configuration` is heuristic (not the `config` script): Mad has no central
 # settings module — env vars are read ad hoc via os.environ (centralization
 # tracked in #97), so the deterministic config generator has nothing to parse.
@@ -588,7 +606,7 @@ docs:
     `.env.example`. Until centralization (#97) lands, the tables in the doc are
     the authoritative inventory; once a settings module exists, switch this
     entry back to `produces: [gen_docs, config]`.
-  acknowledged_at_commit: 7d0cd9b75d2c7b08deba5bdc9f4260d54437e1b8
+  acknowledged_at_commit: 13efb04a7db2cca88d9f8091f9309ebc0dfada72
 - path: docs/05-operations/deployment.md
   section: operations
   kind: heuristic
@@ -612,8 +630,9 @@ docs:
   adapted_heuristic: |
     Re-author when the Dockerfile base/entrypoint changes, when compose changes
     the instance/volume model, or when release.yml/testpypi-preview.yml change
-    the publish flow. Cross-reference docs/docker.md and docs/cloudflare-tunnel.md.
-  acknowledged_at_commit: 1589bf78aa2f26aa2f99c505819402e5b3020f46
+    the publish flow. Cross-reference docs/05-operations/runbooks/docker.md and
+    docs/05-operations/runbooks/cloudflare-tunnel.md.
+  acknowledged_at_commit: 13efb04a7db2cca88d9f8091f9309ebc0dfada72
 - path: docs/05-operations/local-dev.md
   section: operations
   kind: heuristic
@@ -633,7 +652,7 @@ docs:
     type: manual
   adapted_heuristic: |
     Re-author when a Makefile target (install/serve/test/clean) changes, when prerequisites in README change (especially env var resolution logic), when `.env.example` gains/removes a required variable, or when environment variable defaults or fallback behaviors are clarified in README.
-  acknowledged_at_commit: 7d0cd9b75d2c7b08deba5bdc9f4260d54437e1b8
+  acknowledged_at_commit: 13efb04a7db2cca88d9f8091f9309ebc0dfada72
 - path: docs/05-operations/scripts.md
   section: operations
   kind: deterministic
@@ -665,7 +684,7 @@ docs:
   kind: manual
   description: |
     Known tech debt and current limitations — authored, honest. Mirror/curate
-    from docs/backlog.md and the open issues that matter to operators.
+    from docs/08-rfcs/backlog.md and the open issues that matter to operators.
   triggers:
     discovery_hint: |
       Identified through operational experience. Track by age.
@@ -674,7 +693,7 @@ docs:
   produces:
     type: manual
   adapted_heuristic: null
-  acknowledged_at_commit: 1589bf78aa2f26aa2f99c505819402e5b3020f46
+  acknowledged_at_commit: 2151b5631d1aff540c1c172229e3f5c778a1c6b1
 - path: docs/05-operations/slos.md
   section: operations
   kind: manual
@@ -705,6 +724,125 @@ docs:
     type: manual
   adapted_heuristic: null
   acknowledged_at_commit: 1589bf78aa2f26aa2f99c505819402e5b3020f46
+- path: docs/05-operations/runbooks/ai-develop-on-issue.md
+  section: operations
+  kind: heuristic
+  description: |
+    Operator runbook for the label-gated AI Develop on Issue GitHub Action:
+    the author allow-list and label gates, one-time secret/variable/label
+    setup, and how the branch/develop/commit/PR flow runs inside the action.
+  triggers:
+    discovery_hint: |
+      The workflow this runbook documents.
+    paths:
+    - .github/workflows/ai-develop-on-issue.yml
+    hint: |
+      Workflow gates or inputs changed — re-verify the setup recipe (secret,
+      variable, label) and confirm the described trigger/gate/branch flow
+      still matches.
+  produces:
+    type: manual
+  adapted_heuristic: |
+    Re-author when `ai-develop-on-issue.yml` changes its trigger events, gate logic (author allow-list / label check), branch-naming convention, or the commit/push/PR steps run inside the action.
+  acknowledged_at_commit: 13efb04a7db2cca88d9f8091f9309ebc0dfada72
+- path: docs/05-operations/runbooks/claude-code-mcp.md
+  section: operations
+  kind: heuristic
+  description: |
+    Operator runbook for driving Mad from an AI agent over MCP (`/mcp`): the
+    tool-family summary (~26 tools), local + tunneled client config,
+    `MAD_MCP_ALLOWED_HOSTS`, manual validation curls, and troubleshooting.
+  triggers:
+    discovery_hint: |
+      The MCP inbound adapter where the tool surface is defined.
+    paths:
+    - src/mad/adapters/inbound/mcp/server.py
+    hint: |
+      A tool was added, removed, or renamed — re-verify the tool-family
+      summary table and cross-check the count against
+      `docs/01-overview/operations.md`.
+  produces:
+    type: manual
+  adapted_heuristic: |
+    Re-author the tool-family table when a `@mcp.tool` is added, removed, or moves families in `server.py`. Keep the count and family groupings honest; do not duplicate the per-tool catalog in `docs/01-overview/operations.md` — link it instead.
+  acknowledged_at_commit: 13efb04a7db2cca88d9f8091f9309ebc0dfada72
+- path: docs/05-operations/runbooks/cloudflare-tunnel.md
+  section: operations
+  kind: manual
+  description: |
+    Operator runbook for exposing a self-hosted Mad through a Cloudflare
+    Tunnel with Service-Token Cloudflare Access: architecture, setup steps,
+    the SSE buffering/heartbeat caveat, and the loopback-bind threat model.
+  triggers:
+    discovery_hint: |
+      Operational know-how about an external service (Cloudflare), not
+      derivable from a source path. Track by age.
+    paths: []
+    max_age_days: 180
+  produces:
+    type: manual
+  adapted_heuristic: null
+  acknowledged_at_commit: 2151b5631d1aff540c1c172229e3f5c778a1c6b1
+- path: docs/05-operations/runbooks/docker.md
+  section: operations
+  kind: heuristic
+  description: |
+    Operator runbook for running one or more isolated Mad instances with
+    Docker/compose: what's in the image, workspace bind-mount isolation,
+    PUID/PGID host ownership, per-instance credentials, and multi-instance
+    patterns.
+  triggers:
+    discovery_hint: |
+      The container/compose scaffolding this runbook documents.
+    paths:
+    - Dockerfile
+    - compose.example.yml
+    - .env.example
+    hint: |
+      The image, compose model, or example env changed — re-verify the
+      runbook's quickstart, variable table, and instance-isolation claims.
+  produces:
+    type: manual
+  adapted_heuristic: |
+    Re-author when the Dockerfile's base image, entrypoint, or build args change, when `compose.example.yml` changes the volume/instance/port model, or when `.env.example` gains/drops a variable this runbook documents.
+  acknowledged_at_commit: 13efb04a7db2cca88d9f8091f9309ebc0dfada72
+- path: docs/05-operations/runbooks/sandbox-bwrap.md
+  section: operations
+  kind: manual
+  description: |
+    Operator runbook for sandboxing the spawned agent-CLI process (`claude` /
+    `opencode`) with bubblewrap: the wrapper-shim recipe, what the flags
+    guarantee, known limitations, and the install matrix.
+  triggers:
+    discovery_hint: |
+      Operational hardening guidance, not derivable from a source path
+      (bwrap lives outside the repo). Track by age.
+    paths: []
+    max_age_days: 365
+  produces:
+    type: manual
+  adapted_heuristic: null
+  acknowledged_at_commit: 2151b5631d1aff540c1c172229e3f5c778a1c6b1
+- path: docs/05-operations/runbooks/testpypi-preview.md
+  section: operations
+  kind: heuristic
+  description: |
+    Operator runbook for the per-PR TestPyPI preview round-trip: why it
+    exists (issue #50), the build/publish/verify jobs, one-time Trusted
+    Publisher setup, and installing a preview build.
+  triggers:
+    discovery_hint: |
+      The workflow this runbook documents.
+    paths:
+    - .github/workflows/testpypi-preview.yml
+    hint: |
+      Preview workflow jobs or gates changed — verify the job table, the
+      one-time setup steps, and the install-a-preview instructions.
+  produces:
+    type: manual
+  adapted_heuristic: |
+    Re-author when `testpypi-preview.yml` changes its job structure (build/publish/verify), the `TESTPYPI_ENABLED` gate, or the versioning scheme (`<base>.dev<run_id>`).
+  acknowledged_at_commit: 13efb04a7db2cca88d9f8091f9309ebc0dfada72
 
 # ---- 06 flow-participation ---------------------------------------------
 - path: docs/06-flow-participation/README.md
@@ -757,6 +895,24 @@ docs:
     type: manual
   adapted_heuristic: null
   acknowledged_at_commit: 1589bf78aa2f26aa2f99c505819402e5b3020f46
+- path: docs/08-rfcs/backlog.md
+  section: rfcs
+  kind: manual
+  description: |
+    The unnumbered pre-RFC inbox: improvements identified but deferred past
+    v0.1 (architecture, deprecations, and a flat list of smaller deferred
+    items), translated to English. Items graduate to a numbered RFC or an
+    ADR when picked up.
+  triggers:
+    discovery_hint: |
+      A curated proposal inbox, not derivable from a source path. Track by
+      age.
+    paths: []
+    max_age_days: 90
+  produces:
+    type: manual
+  adapted_heuristic: null
+  acknowledged_at_commit: 2151b5631d1aff540c1c172229e3f5c778a1c6b1
 
 # ---- 09 history ---------------------------------------------------------
 # `changelog` is heuristic, sourced from the semantic-release package
@@ -782,7 +938,7 @@ docs:
     type: manual
   adapted_heuristic: |
     Mirror CHANGELOG.md verbatim: add new version sections in reverse-chronological order (newest first), preserve existing section structure (Features/Bug Fixes subsections), use exact commit/PR links from source, and maintain the four-field frontmatter. Update repo URLs to match current canonical source (mad-core/mad).
-  acknowledged_at_commit: 7d0cd9b75d2c7b08deba5bdc9f4260d54437e1b8
+  acknowledged_at_commit: 13efb04a7db2cca88d9f8091f9309ebc0dfada72
 - path: docs/09-history/migrations.md
   section: history
   kind: heuristic
@@ -804,3 +960,186 @@ docs:
     rebuilds state by replay (rehydrate.py) — there is no Alembic/Flyway-style
     migration framework. Keep a `not applicable` stub unless one is adopted.
   acknowledged_at_commit: 1589bf78aa2f26aa2f99c505819402e5b3020f46
+
+# ---- 10 user-manuals ----------------------------------------------------
+# End-user manuals for driving Mad itself (HTTP + MCP), not to be confused
+# with 05-operations/runbooks (operator/admin procedures). All entries are
+# `kind: manual` and `produces: manual` like the rest of 01-overview, but
+# unlike those, several carry non-empty `triggers.paths`: a manual goes
+# stale in intent (not byte-for-byte), so path presence is tracked for
+# awareness only — the actual gate is the `max_age_days` cap. This is the
+# approved hybrid for this section.
+- path: docs/10-user-manuals/README.md
+  section: user-manuals
+  kind: manual
+  description: |
+    Index for the end-user manuals: a one-paragraph "what Mad is (and isn't)
+    for you" plus a "which manual do I want?" table linking the seven
+    manuals. Hand-authored once; rarely changes.
+  triggers:
+    discovery_hint: |
+      No code path determines this. Structural/meta content, like
+      docs/README.md. Leave `paths: []`.
+    paths: []
+    max_age_days: 365
+  produces:
+    type: manual
+  adapted_heuristic: null
+  acknowledged_at_commit: 2151b5631d1aff540c1c172229e3f5c778a1c6b1
+- path: docs/10-user-manuals/getting-started.md
+  section: user-manuals
+  kind: manual
+  description: |
+    Install Mad (`pip install mad-bros` / `mad serve`, or the Docker
+    runbook) and complete one first end-to-end round trip: create a
+    session, send it a prompt, watch the result — shown for both HTTP and
+    MCP.
+  triggers:
+    discovery_hint: |
+      A user manual goes stale when the exposed surface it walks through
+      changes shape (the quickstart flow, the console-script entry point)
+      — not on every commit that touches these files. Path presence is
+      tracked for awareness; the age cap is the real backstop.
+    paths:
+    - README.md
+    - src/mad/entry_points/cli.py
+    max_age_days: 180
+  produces:
+    type: manual
+  adapted_heuristic: null
+  acknowledged_at_commit: 2151b5631d1aff540c1c172229e3f5c778a1c6b1
+- path: docs/10-user-manuals/sessions.md
+  section: user-manuals
+  kind: manual
+  description: |
+    End-user manual for the session lifecycle: create (resources/mounts),
+    send a message (async, one in flight per session), inspect, list and
+    filter, delete and bulk cleanup with `dry_run`. Includes the
+    created/running/idle/error status tour, for both HTTP and MCP.
+  triggers:
+    discovery_hint: |
+      A user manual goes stale when the exposed surface it documents
+      changes shape (a session route/tool added, removed, or its fields
+      renamed) — not on every commit. Path presence is tracked for
+      awareness; the age cap is the real backstop.
+    paths:
+    - src/mad/adapters/inbound/http/routes/sessions.py
+    - src/mad/adapters/inbound/mcp/server.py
+    - README.md
+    max_age_days: 180
+  produces:
+    type: manual
+  adapted_heuristic: null
+  acknowledged_at_commit: 2151b5631d1aff540c1c172229e3f5c778a1c6b1
+- path: docs/10-user-manuals/events.md
+  section: user-manuals
+  kind: manual
+  description: |
+    End-user manual for reading Mad's activity: the paginated history query
+    and the live SSE tail (no MCP tool for the stream — deliberate parity
+    carve-out), the event vocabulary a user reads (`agent.output`,
+    `session.status_idle`, `session.error`, hook events at a high level),
+    and `Last-Event-ID` catch-up in plain words.
+  triggers:
+    discovery_hint: |
+      A user manual goes stale when the exposed surface it documents
+      changes shape (an events route/tool added, removed, or its fields
+      renamed) — not on every commit. Path presence is tracked for
+      awareness; the age cap is the real backstop.
+    paths:
+    - src/mad/adapters/inbound/http/routes/events.py
+    - src/mad/adapters/inbound/mcp/server.py
+    max_age_days: 180
+  produces:
+    type: manual
+  adapted_heuristic: null
+  acknowledged_at_commit: 2151b5631d1aff540c1c172229e3f5c778a1c6b1
+- path: docs/10-user-manuals/queue-and-scheduling.md
+  section: user-manuals
+  kind: manual
+  description: |
+    End-user manual for lining up prompts and controlling when they run:
+    enqueue/list/cancel tasks, the global queue view, per-session and
+    deployment-wide dispatch policy (immediate/work_window/manual), the
+    manual trigger, and cross-session priority.
+  triggers:
+    discovery_hint: |
+      A user manual goes stale when the exposed surface it documents
+      changes shape (a queue/dispatch route or tool added, removed, or its
+      fields renamed) — not on every commit. Path presence is tracked for
+      awareness; the age cap is the real backstop.
+    paths:
+    - src/mad/adapters/inbound/http/routes/orchestration.py
+    - src/mad/adapters/inbound/mcp/server.py
+    max_age_days: 180
+  produces:
+    type: manual
+  adapted_heuristic: null
+  acknowledged_at_commit: 2151b5631d1aff540c1c172229e3f5c778a1c6b1
+- path: docs/10-user-manuals/workflows.md
+  section: user-manuals
+  kind: manual
+  description: |
+    End-user manual for chaining sessions into a pipeline: creating a
+    workflow from a DAG of steps (`depends_on`, `from_step`/`ref` mount
+    inheritance) and reading back per-step and overall status, for both
+    HTTP and MCP.
+  triggers:
+    discovery_hint: |
+      A user manual goes stale when the exposed surface it documents
+      changes shape (a workflow route/tool added, removed, or its fields
+      renamed) — not on every commit. Path presence is tracked for
+      awareness; the age cap is the real backstop.
+    paths:
+    - src/mad/adapters/inbound/http/routes/workflows.py
+    - src/mad/adapters/inbound/mcp/server.py
+    max_age_days: 180
+  produces:
+    type: manual
+  adapted_heuristic: null
+  acknowledged_at_commit: 2151b5631d1aff540c1c172229e3f5c778a1c6b1
+- path: docs/10-user-manuals/choosing-agent-and-model.md
+  section: user-manuals
+  kind: manual
+  description: |
+    End-user manual for picking which agent, model, and reasoning effort a
+    session or task uses: provider model discovery and the deployment-wide
+    model/effort get/set/clear, plus where per-session and per-task
+    overrides fit in the precedence.
+  triggers:
+    discovery_hint: |
+      A user manual goes stale when the exposed surface it documents
+      changes shape (a provider/model/effort route or tool added, removed,
+      or its fields renamed) — not on every commit. Path presence is
+      tracked for awareness; the age cap is the real backstop.
+    paths:
+    - src/mad/adapters/inbound/http/routes/providers.py
+    - src/mad/adapters/inbound/mcp/server.py
+    max_age_days: 180
+  produces:
+    type: manual
+  adapted_heuristic: null
+  acknowledged_at_commit: 2151b5631d1aff540c1c172229e3f5c778a1c6b1
+- path: docs/10-user-manuals/connecting-your-tools.md
+  section: user-manuals
+  kind: manual
+  description: |
+    End-user manual for driving Mad from Claude Code or any other MCP
+    client: pointing a client at `/mcp`, what tools appear, and the
+    HTTP/MCP parity guarantee in plain words. Links the operator-focused
+    `runbooks/claude-code-mcp.md` for deep client/tunnel configuration
+    instead of duplicating it.
+  triggers:
+    discovery_hint: |
+      A user manual goes stale when the exposed surface it documents
+      changes shape (the MCP mount or console-script entry point changes)
+      — not on every commit. Path presence is tracked for awareness; the
+      age cap is the real backstop.
+    paths:
+    - src/mad/adapters/inbound/mcp/server.py
+    - src/mad/entry_points/cli.py
+    max_age_days: 180
+  produces:
+    type: manual
+  adapted_heuristic: null
+  acknowledged_at_commit: 2151b5631d1aff540c1c172229e3f5c778a1c6b1

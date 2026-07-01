@@ -17,7 +17,7 @@ The two load-bearing references are:
 
 - [ADR-0001](../adr/0001-testing-strategy.md) — the layered testing strategy
   and coverage thresholds (`docs/adr/0001-testing-strategy.md`).
-- [`docs/testing-heuristics.md`](../testing-heuristics.md) — the eight
+- [`docs/04-conventions/testing-heuristics.md`](testing-heuristics.md) — the eight
   operational rules for writing a test that actually tests something. This is
   the canonical source; the summary below is a pointer, not a replacement.
 
@@ -71,7 +71,7 @@ tests/
 
 ## The eight testing heuristics
 
-Every test must satisfy the eight rules in `docs/testing-heuristics.md`. A test
+Every test must satisfy the eight rules in `docs/04-conventions/testing-heuristics.md`. A test
 that violates them is debt, not coverage; reviewers (human and the `test-critic`
 agent) reject it. Summary of each:
 
@@ -116,7 +116,7 @@ agent) reject it. Summary of each:
    comment; the global cap is never relaxed.
 
 The full text — with bad/good examples and a pre-merge checklist — lives in
-`docs/testing-heuristics.md`. Hard rule 10 in `CLAUDE.md` pins these rules at
+`docs/04-conventions/testing-heuristics.md`. Hard rule 10 in `CLAUDE.md` pins these rules at
 the project level.
 
 ### The write-test ↔ test-critic loop

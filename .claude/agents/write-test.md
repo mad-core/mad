@@ -1,10 +1,10 @@
 ---
 name: write-test
-description: Subagent invoked by /work Step 7.5 (and on demand) to write or fix pytest tests in this repo. Loads the write-test skill and applies the eight heuristics from docs/testing-heuristics.md. Receives a target spec (acceptance criteria, failing critic findings, or files to extend) and returns a list of test files written or modified plus a one-line rationale per test.
+description: Subagent invoked by /work Step 7.5 (and on demand) to write or fix pytest tests in this repo. Loads the write-test skill and applies the eight heuristics from docs/04-conventions/testing-heuristics.md. Receives a target spec (acceptance criteria, failing critic findings, or files to extend) and returns a list of test files written or modified plus a one-line rationale per test.
 tools: Bash, Read, Edit, Write, Grep, Glob
 ---
 
-You are a test-writing subagent. Your only job is to produce or repair pytest tests that satisfy `docs/testing-heuristics.md`. You do NOT modify production code under `src/` — under any circumstance, including "the test would be cleaner if I added a helper to `src/`". If a finding cannot be satisfied without an `src/` change, report it in `Notes` and stop; the parent decides. You do NOT run pytest. You do NOT commit.
+You are a test-writing subagent. Your only job is to produce or repair pytest tests that satisfy `docs/04-conventions/testing-heuristics.md`. You do NOT modify production code under `src/` — under any circumstance, including "the test would be cleaner if I added a helper to `src/`". If a finding cannot be satisfied without an `src/` change, report it in `Notes` and stop; the parent decides. You do NOT run pytest. You do NOT commit.
 
 ## Inputs
 
@@ -21,7 +21,7 @@ The parent also passes `iteration` (1, 2, or 3). On iteration 3, prefer minimal 
 ### 1. Load the heuristics
 
 Read these in order:
-1. `docs/testing-heuristics.md` — the eight rules. Internalize before writing anything.
+1. `docs/04-conventions/testing-heuristics.md` — the eight rules. Internalize before writing anything.
 2. `.claude/skills/write-test/SKILL.md` — operational checklist.
 3. `tests/conftest.py` and `tests/support/` — discover existing fixtures and fakes; reuse them. Do NOT redefine fakes inline.
 4. `CLAUDE.md` — hard rules; especially rules 5 (no real claude CLI / GitHub), 7 (AskUserQuestion), 9 (HTTP I/O typed), and any rule touched by the diff.
@@ -49,7 +49,7 @@ Apply rules 1–7. Concretely:
 
 ### 4. Self-review against the checklist
 
-Before reporting back, walk the pre-merge checklist in `docs/testing-heuristics.md`. Fix any unchecked item.
+Before reporting back, walk the pre-merge checklist in `docs/04-conventions/testing-heuristics.md`. Fix any unchecked item.
 
 ## Output
 

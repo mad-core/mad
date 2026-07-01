@@ -10,7 +10,8 @@
 #
 # Token hygiene (CLAUDE.md hard rule 2): NO secret is ever baked into a layer.
 # Credentials (GitHub token, AWS, the Claude login) are mounted at runtime via
-# the compose volumes / env-file — see compose.example.yml and docs/docker.md.
+# the compose volumes / env-file — see compose.example.yml and
+# docs/05-operations/runbooks/docker.md.
 FROM node:20-slim
 
 # --- system dependencies + gh CLI -------------------------------------------

@@ -158,7 +158,7 @@ enforced numbers are 94 (core) and 90 (full). See ADR-0001 for the coverage rati
 ## Other test-suite invariants
 
 Defined in `[tool.pytest.ini_options]` and reinforced by the testing heuristics
-(CLAUDE.md hard rule 10, `docs/testing-heuristics.md`):
+(CLAUDE.md hard rule 10, `docs/04-conventions/testing-heuristics.md`):
 
 - `timeout = 15` (`timeout_method = "thread"`) — a hard per-test wall-clock cap so a
   hung SSE / polling / subprocess test fails instead of stalling the suite.
@@ -183,4 +183,4 @@ points at the broken gate:
   full decision, costs, rejected tools, and revisit triggers.
 - [ADR-0001 — Testing strategy](../adr/0001-testing-strategy.md) — coverage rationale
   and heuristics.
-- `docs/testing-heuristics.md` — the eight test heuristics (CLAUDE.md hard rule 10).
+- `docs/04-conventions/testing-heuristics.md` — the eight test heuristics (CLAUDE.md hard rule 10).

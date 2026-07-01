@@ -1,10 +1,18 @@
+---
+service: mad
+domain: backend
+section: operations
+source_of_truth: repo
+---
+
 # AI development on an issue (GitHub Action)
 
 This guide walks an operator through enabling the **AI Develop on Issue** workflow
-([`.github/workflows/ai-develop-on-issue.yml`](../.github/workflows/ai-develop-on-issue.yml)).
+([`.github/workflows/ai-develop-on-issue.yml`](../../../.github/workflows/ai-develop-on-issue.yml)).
 Once configured, applying a single label to an issue starts Claude-driven
 development on that issue's branch and opens a pull request — no local session,
-no manual `/work` invocation.
+no manual `/work` invocation. See [`../ci-cd.md#ai-develop-on-issueyml`](../ci-cd.md#ai-develop-on-issueyml)
+for how this workflow fits into the full pipeline.
 
 The recipe is two gates and one principle:
 
@@ -49,7 +57,7 @@ claude setup-token
 ```
 
 Copy the printed token. **Do not paste it into a file, commit, or issue** — it is
-a credential. Per [CLAUDE.md hard rule 2](../CLAUDE.md) the workflow references it
+a credential. Per [CLAUDE.md hard rule 2](../../../CLAUDE.md) the workflow references it
 only as a secret expression and never echoes it to logs.
 
 ### 2. Store the secret

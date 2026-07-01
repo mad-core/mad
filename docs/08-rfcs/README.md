@@ -39,7 +39,12 @@ An accepted RFC does not stay here as the decision of record — it **graduates*
 
 - One file per RFC, named `NNNN-slug.md` (zero-padded, sequential — `0001-some-proposal.md`), mirroring the ADR filename convention.
 - A new proposal starts as a file in this directory; reference it from this index while it is under discussion.
+- `backlog.md` is the unnumbered proposal inbox — lower-ceremony than a numbered RFC. Items graduate to a numbered `NNNN-slug.md` RFC or directly to an ADR when picked up.
 
 ## Index
 
-No RFCs yet. New proposals go here as `NNNN-slug.md` and are linked from this table.
+| File | What it is |
+|---|---|
+| [`backlog.md`](backlog.md) | Unnumbered pre-RFC inbox — improvements deferred past v0.1, not yet promoted to a numbered RFC. |
+
+No numbered RFCs yet. New proposals go here as `NNNN-slug.md` and are linked from this table.

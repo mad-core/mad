@@ -8,7 +8,7 @@ name: AI Develop on Issue
 # Either gate failing makes the run a no-op (skipped), so arbitrary contributors
 # or unlabeled issues never trigger automated execution.
 #
-# Operator setup (GitHub-side, not committed — see docs/ai-develop-on-issue.md):
+# Operator setup (GitHub-side, not committed — see docs/05-operations/runbooks/ai-develop-on-issue.md):
 #   - Secret   CLAUDE_CODE_OAUTH_TOKEN  ← output of `claude setup-token`
 #   - Variable AI_DEVELOP_ALLOWLIST     ← e.g. "cimode jlsaco"
 #   - Label    ai:auto-develop

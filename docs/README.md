@@ -78,6 +78,10 @@ why/what (intent, architecture, contracts); higher numbers are the how
   pre-commit, gitleaks, pip-audit).
 - `testing-strategy.md` — test layers, the eight testing heuristics, coverage,
   and the fakes-in-`tests/support` convention.
+- `testing-heuristics.md` — the eight operational testing rules themselves
+  (negative twins, single-contract assertions, fakes in `tests/support/`,
+  OpenAPI + SSE contract tests, state-based polling), plus the pre-merge
+  checklist (hard rule 10).
 
 ### 05-operations — how it runs
 
@@ -91,7 +95,18 @@ why/what (intent, architecture, contracts); higher numbers are the how
 - `scripts.md` — inventory of Makefile targets and helper scripts (generated).
 - `known-issues.md` — known tech debt and current limitations.
 - `slos.md` — SLOs / targets, or the implicit expectations if none are formal.
-- `runbooks/README.md` — operational procedures, one file per procedure.
+- `runbooks/README.md` — operational procedures index, one file per procedure:
+  - `runbooks/docker.md` — running one or more isolated Mad instances with
+    Docker/compose.
+  - `runbooks/cloudflare-tunnel.md` — exposing a self-hosted Mad through a
+    Cloudflare Tunnel with Service-Token Access.
+  - `runbooks/claude-code-mcp.md` — driving Mad from an AI agent over MCP
+    (`/mcp`): tool surface, client config, manual validation.
+  - `runbooks/sandbox-bwrap.md` — sandboxing the spawned agent-CLI process
+    with bubblewrap.
+  - `runbooks/ai-develop-on-issue.md` — the label-gated GitHub Action that
+    runs Claude-driven development on an issue.
+  - `runbooks/testpypi-preview.md` — the per-PR TestPyPI preview round-trip.
 
 ### 06-flow-participation — Mad's seat in end-to-end flows
 
@@ -107,6 +122,9 @@ why/what (intent, architecture, contracts); higher numbers are the how
 ### 08-rfcs — proposals before a decision
 
 - `README.md` — free-form proposals and trade-offs; index plus one file per RFC.
+- `backlog.md` — the unnumbered pre-RFC inbox: improvements deferred past v0.1,
+  translated to English; items graduate to a numbered RFC or an ADR when
+  picked up.
 
 ### 09-history — what changed over time
 
@@ -114,6 +132,24 @@ why/what (intent, architecture, contracts); higher numbers are the how
   `CHANGELOG.md` (not a raw git log).
 - `migrations.md` — migrations log; `not applicable` for Mad (append-only JSONL
   log, no schema-migration framework).
+
+### 10-user-manuals — how to use Mad
+
+- `README.md` — index: what Mad is (and isn't) for an end user, plus a
+  "which manual do I want?" table.
+- `getting-started.md` — install Mad and run one first end-to-end round trip.
+- `sessions.md` — run an agent on your repo: create, message, inspect, list,
+  delete, bulk cleanup.
+- `events.md` — watch what an agent is doing: the history query and the live
+  stream.
+- `queue-and-scheduling.md` — line up prompts and control when they run.
+- `workflows.md` — chain sessions into a multi-step pipeline.
+- `choosing-agent-and-model.md` — pick the agent, model, and reasoning effort.
+- `connecting-your-tools.md` — drive Mad from Claude Code or another MCP
+  client.
+
+These are end-user manuals (how to *use* Mad over HTTP/MCP), distinct from
+`05-operations/runbooks/` (how an *operator* runs and maintains it).
 
 ## The living-docs model
 

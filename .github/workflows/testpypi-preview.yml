@@ -21,7 +21,7 @@ name: TestPyPI preview
 #   4. Set the repository variable TESTPYPI_ENABLED=true
 #      (Settings → Secrets and variables → Actions → Variables).
 #      Flip it to anything else to disable publishing without deleting the file.
-# See docs/testpypi-preview.md for the full operator guide.
+# See docs/05-operations/runbooks/testpypi-preview.md for the full operator guide.
 
 on:
   pull_request:

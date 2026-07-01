@@ -1,3 +1,10 @@
+---
+service: mad
+domain: backend
+section: operations
+source_of_truth: repo
+---
+
 # Exposing Mad through a Cloudflare Tunnel
 
 This guide walks an operator through reaching their self-hosted Mad instance from any device — laptop, phone, scripts, Claude Code / MCP — without forwarding ports, holding a public IP, or shipping authentication code into Mad itself.
@@ -13,9 +20,9 @@ The principle: **authentication happens at Cloudflare, not in Mad.** Mad's sourc
 
 This guide assumes a single operator who wants their own Mad reachable from their own devices. It covers programmatic clients — Claude Code, MCP servers, scripts, `curl`. It does not cover:
 
-- Sharing one Mad instance across multiple users (deferred per [ADR-0006](adr/0006-multi-tenancy-deferred.md); see "Future expansion" below for the recommended pattern instead).
+- Sharing one Mad instance across multiple users (deferred per [ADR-0006](../../adr/0006-multi-tenancy-deferred.md); see "Future expansion" below for the recommended pattern instead).
 - Browser-based UIs and SSO login flows (would require an additional Cloudflare Access SSO policy and CORS middleware in Mad).
-- Hardening the host itself; see [`docs/sandbox-bwrap.md`](sandbox-bwrap.md) for that.
+- Hardening the host itself; see [`sandbox-bwrap.md`](sandbox-bwrap.md) for that.
 
 ## Threat model — read this before you do anything
 
@@ -66,7 +73,7 @@ If you forget every other recommendation in this guide, remember this one.
 Three things that matter in this picture:
 
 1. **Mad binds to `127.0.0.1`, not `0.0.0.0`.** When the tunnel is your only ingress, exposing the listener publicly is just an extra unattended port. Set `HOST=127.0.0.1` for `make serve`.
-2. **The internal UDS app stays on the host.** `POST /_internal/hooks` is reachable only from local processes via `/tmp/mad/hooks.sock` — that is by design (see [ADR-0008](adr/0008-internal-hook-adapter-and-vocabulary.md)). Do not add an ingress rule for it.
+2. **The internal UDS app stays on the host.** `POST /_internal/hooks` is reachable only from local processes via `/tmp/mad/hooks.sock` — that is by design (see [ADR-0008](../../adr/0008-internal-hook-adapter-and-vocabulary.md)). Do not add an ingress rule for it.
 3. **Authentication is a Cloudflare concern.** Mad has no auth middleware on `main`; the security boundary is the Access policy at the edge, plus the loopback bind and tunnel-only ingress.
 
 ## Prerequisites
@@ -325,13 +332,13 @@ Run them as two independent services. If they share one unit and Mad crashes, th
 
 ### Hooks stay on the local UDS
 
-`POST /_internal/hooks` is the ingestion endpoint for `claude-cli` lifecycle hooks (see [ADR-0008](adr/0008-internal-hook-adapter-and-vocabulary.md)). It is mounted only on the internal app bound to `/tmp/mad/hooks.sock`, never on the public TCP app. Do not add a tunnel ingress for it. Hooks captured locally surface in `/v1/events*` automatically because both apps share the same `EventEmitter` — you tail your local agent's hooks remotely without ever exposing the write surface.
+`POST /_internal/hooks` is the ingestion endpoint for `claude-cli` lifecycle hooks (see [ADR-0008](../../adr/0008-internal-hook-adapter-and-vocabulary.md)). It is mounted only on the internal app bound to `/tmp/mad/hooks.sock`, never on the public TCP app. Do not add a tunnel ingress for it. Hooks captured locally surface in `/v1/events*` automatically because both apps share the same `EventEmitter` — you tail your local agent's hooks remotely without ever exposing the write surface.
 
 ## Client patterns
 
 ### Claude Code / MCP
 
-Mad ships a native MCP server mounted at **`/mcp`** on this same public app, reachable through this same tunnel and protected by this same Service Token — no extra ingress rule. Point an MCP client at `https://mad.example.com/mcp` with the two `CF-Access-*` headers below. The full tool surface, client config, the `MAD_MCP_ALLOWED_HOSTS` Host-header caveat, and manual validation steps are in [`docs/claude-code-mcp.md`](claude-code-mcp.md).
+Mad ships a native MCP server mounted at **`/mcp`** on this same public app, reachable through this same tunnel and protected by this same Service Token — no extra ingress rule. Point an MCP client at `https://mad.example.com/mcp` with the two `CF-Access-*` headers below. The full tool surface, client config, the `MAD_MCP_ALLOWED_HOSTS` Host-header caveat, and manual validation steps are in [`claude-code-mcp.md`](claude-code-mcp.md).
 
 For scripted REST access, pass the two headers through whatever HTTP client you wrap. With `httpx`:
 
@@ -350,7 +357,7 @@ client = httpx.AsyncClient(
 )
 ```
 
-Every call through that client is pre-authenticated. SSE consumers should additionally honour `Last-Event-ID` reconnection — Mad's `/v1/events/stream` replays gapless from the JSONL log when that header is present, which makes it correct to retry on any disconnect (Cloudflare timeout, transient network, or your own tunnel restart). See [ADR-0004](adr/0004-events-module-vocabulary-and-scope.md) for the replay contract.
+Every call through that client is pre-authenticated. SSE consumers should additionally honour `Last-Event-ID` reconnection — Mad's `/v1/events/stream` replays gapless from the JSONL log when that header is present, which makes it correct to retry on any disconnect (Cloudflare timeout, transient network, or your own tunnel restart). See [ADR-0004](../../adr/0004-events-module-vocabulary-and-scope.md) for the replay contract.
 
 ### Generic Python script
 
@@ -377,11 +384,11 @@ with httpx.stream(
 
 ## Future expansion
 
-If you add collaborators, the recommended pattern under [ADR-0006](adr/0006-multi-tenancy-deferred.md) is **one Mad instance per user, one tunnel hostname per user** — not a shared instance. Mad does not yet isolate events per caller, so any authenticated client of a shared instance sees every other client's session log. Cloudflare Access supports per-user identity policies, but Mad will not differentiate users once they pass the edge.
+If you add collaborators, the recommended pattern under [ADR-0006](../../adr/0006-multi-tenancy-deferred.md) is **one Mad instance per user, one tunnel hostname per user** — not a shared instance. Mad does not yet isolate events per caller, so any authenticated client of a shared instance sees every other client's session log. Cloudflare Access supports per-user identity policies, but Mad will not differentiate users once they pass the edge.
 
 If you add a browser UI, layer an SSO policy onto the same Access application (email OTP, GitHub OAuth, etc.) and add CORS middleware to Mad — the latter is a project change, not a doc one. Service Tokens for programmatic clients can coexist with SSO for humans on the same hostname.
 
-HMAC on `POST /_internal/hooks` is deferred per [ADR-0008](adr/0008-internal-hook-adapter-and-vocabulary.md); Cloudflare's edge auth does not change that calculus, since the UDS is never exposed in either direction.
+HMAC on `POST /_internal/hooks` is deferred per [ADR-0008](../../adr/0008-internal-hook-adapter-and-vocabulary.md); Cloudflare's edge auth does not change that calculus, since the UDS is never exposed in either direction.
 
 ## Troubleshooting
 
