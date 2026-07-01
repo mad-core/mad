@@ -114,7 +114,7 @@ docs:
     type: manual
   adapted_heuristic: |
     Re-author the operations catalog when: (1) a new use case is added under any `src/mad/core/*/use_cases/` subpackage (add one row per use case), (2) an HTTP endpoint is added/removed/renamed under `src/mad/adapters/inbound/http/routes/` (keep HTTP and MCP tools in parity per hard rule 13), (3) a tool is added/removed/renamed in `src/mad/adapters/inbound/mcp/server.py` (mirroring the HTTP boundary), or (4) a background component (lifespan-managed asyncio task, app-startup hook, or other no-request-surface operation) is added/removed/renamed that performs observable side effects. Cross-reference each row with its corresponding HTTP route or MCP tool, verify the operation's trigger, and re-describe the observable side effects (events, workspace actions). Ensure HTTP/MCP parity is maintained and the operation's bounded context (sessions, events, orchestration) is accurately placed.
-  acknowledged_at_commit: 7d0cd9b75d2c7b08deba5bdc9f4260d54437e1b8
+  acknowledged_at_commit: 13efb04a7db2cca88d9f8091f9309ebc0dfada72
 - path: docs/01-overview/scope.md
   section: overview
   kind: manual
@@ -188,7 +188,7 @@ docs:
     type: manual
   adapted_heuristic: |
     Re-author when a new bounded context appears under `core/`, a new adapter group under `adapters/inbound/` or `adapters/outbound/`, or a new port Protocol under `core/*/ports/`. Renames inside an existing module are captured by source-tree.md and do NOT need a rewrite.
-  acknowledged_at_commit: 7d0cd9b75d2c7b08deba5bdc9f4260d54437e1b8
+  acknowledged_at_commit: 13efb04a7db2cca88d9f8091f9309ebc0dfada72
 - path: docs/02-architecture/data-model.md
   section: architecture
   kind: heuristic
@@ -388,7 +388,7 @@ docs:
     Re-author when a runtime dependency in `pyproject.toml` changes, when a new
     outbound adapter (launcher provider) appears under `outbound/agents/`, or
     when the spawn contract / timeout handling in a launcher changes.
-  acknowledged_at_commit: 7d0cd9b75d2c7b08deba5bdc9f4260d54437e1b8
+  acknowledged_at_commit: 13efb04a7db2cca88d9f8091f9309ebc0dfada72
 
 # ---- 04 conventions -----------------------------------------------------
 - path: docs/04-conventions/api-design.md
@@ -411,7 +411,7 @@ docs:
     type: manual
   adapted_heuristic: |
     Re-author when route prefixes/tags change, when a route stops declaring a Pydantic body/response_model (hard rule 9 violation), when the HTTP<->MCP parity rule (hard rule 13, ADR-0012) is affected, or when new router modules are added to the five-module table.
-  acknowledged_at_commit: 7d0cd9b75d2c7b08deba5bdc9f4260d54437e1b8
+  acknowledged_at_commit: 13efb04a7db2cca88d9f8091f9309ebc0dfada72
 - path: docs/04-conventions/auth.md
   section: conventions
   kind: heuristic
@@ -436,7 +436,7 @@ docs:
     auth is introduced (today there is none — edge only), or when the token
     hygiene flow (clone token stripped from the remote, hard rule 2) changes.
     Cross-reference docs/05-operations/runbooks/cloudflare-tunnel.md.
-  acknowledged_at_commit: 2151b5631d1aff540c1c172229e3f5c778a1c6b1
+  acknowledged_at_commit: 13efb04a7db2cca88d9f8091f9309ebc0dfada72
 - path: docs/04-conventions/error-handling.md
   section: conventions
   kind: heuristic
@@ -502,7 +502,7 @@ docs:
     Re-author when `[tool.ruff]`, `[tool.mypy]`, `[tool.importlinter]`, or
     `[tool.coverage]` in pyproject.toml change, or when a pre-commit hook is
     added/removed. Cross-reference ADR-0002.
-  acknowledged_at_commit: 7d0cd9b75d2c7b08deba5bdc9f4260d54437e1b8
+  acknowledged_at_commit: 13efb04a7db2cca88d9f8091f9309ebc0dfada72
 - path: docs/04-conventions/testing-strategy.md
   section: conventions
   kind: heuristic
@@ -524,7 +524,7 @@ docs:
     type: manual
   adapted_heuristic: |
     Re-author when test-layer layout under `tests/` reorganizes, when coverage thresholds in CI/pyproject change, when docs/04-conventions/testing-heuristics.md changes the eight rules, or when new AgentLauncher or orchestration doubles are added to tests/support/. Document all shared doubles explicitly by type and purpose; Fakes live in tests/support (ADR-0003).
-  acknowledged_at_commit: 2151b5631d1aff540c1c172229e3f5c778a1c6b1
+  acknowledged_at_commit: 13efb04a7db2cca88d9f8091f9309ebc0dfada72
 - path: docs/04-conventions/testing-heuristics.md
   section: conventions
   kind: manual
@@ -574,7 +574,7 @@ docs:
     Re-author when any file under `.github/workflows/` is added, removed, or
     materially changed. Keep the job/step listing in sync with `gen_docs ci-cd`
     and explain what each gate enforces (hard rule 12 versioning policy).
-  acknowledged_at_commit: 1589bf78aa2f26aa2f99c505819402e5b3020f46
+  acknowledged_at_commit: 13efb04a7db2cca88d9f8091f9309ebc0dfada72
 # `configuration` is heuristic (not the `config` script): Mad has no central
 # settings module — env vars are read ad hoc via os.environ (centralization
 # tracked in #97), so the deterministic config generator has nothing to parse.
@@ -606,7 +606,7 @@ docs:
     `.env.example`. Until centralization (#97) lands, the tables in the doc are
     the authoritative inventory; once a settings module exists, switch this
     entry back to `produces: [gen_docs, config]`.
-  acknowledged_at_commit: 7d0cd9b75d2c7b08deba5bdc9f4260d54437e1b8
+  acknowledged_at_commit: 13efb04a7db2cca88d9f8091f9309ebc0dfada72
 - path: docs/05-operations/deployment.md
   section: operations
   kind: heuristic
@@ -632,7 +632,7 @@ docs:
     the instance/volume model, or when release.yml/testpypi-preview.yml change
     the publish flow. Cross-reference docs/05-operations/runbooks/docker.md and
     docs/05-operations/runbooks/cloudflare-tunnel.md.
-  acknowledged_at_commit: 2151b5631d1aff540c1c172229e3f5c778a1c6b1
+  acknowledged_at_commit: 13efb04a7db2cca88d9f8091f9309ebc0dfada72
 - path: docs/05-operations/local-dev.md
   section: operations
   kind: heuristic
@@ -652,7 +652,7 @@ docs:
     type: manual
   adapted_heuristic: |
     Re-author when a Makefile target (install/serve/test/clean) changes, when prerequisites in README change (especially env var resolution logic), when `.env.example` gains/removes a required variable, or when environment variable defaults or fallback behaviors are clarified in README.
-  acknowledged_at_commit: 7d0cd9b75d2c7b08deba5bdc9f4260d54437e1b8
+  acknowledged_at_commit: 13efb04a7db2cca88d9f8091f9309ebc0dfada72
 - path: docs/05-operations/scripts.md
   section: operations
   kind: deterministic
@@ -744,7 +744,7 @@ docs:
     type: manual
   adapted_heuristic: |
     Re-author when `ai-develop-on-issue.yml` changes its trigger events, gate logic (author allow-list / label check), branch-naming convention, or the commit/push/PR steps run inside the action.
-  acknowledged_at_commit: 2151b5631d1aff540c1c172229e3f5c778a1c6b1
+  acknowledged_at_commit: 13efb04a7db2cca88d9f8091f9309ebc0dfada72
 - path: docs/05-operations/runbooks/claude-code-mcp.md
   section: operations
   kind: heuristic
@@ -765,7 +765,7 @@ docs:
     type: manual
   adapted_heuristic: |
     Re-author the tool-family table when a `@mcp.tool` is added, removed, or moves families in `server.py`. Keep the count and family groupings honest; do not duplicate the per-tool catalog in `docs/01-overview/operations.md` — link it instead.
-  acknowledged_at_commit: 2151b5631d1aff540c1c172229e3f5c778a1c6b1
+  acknowledged_at_commit: 13efb04a7db2cca88d9f8091f9309ebc0dfada72
 - path: docs/05-operations/runbooks/cloudflare-tunnel.md
   section: operations
   kind: manual
@@ -805,7 +805,7 @@ docs:
     type: manual
   adapted_heuristic: |
     Re-author when the Dockerfile's base image, entrypoint, or build args change, when `compose.example.yml` changes the volume/instance/port model, or when `.env.example` gains/drops a variable this runbook documents.
-  acknowledged_at_commit: 2151b5631d1aff540c1c172229e3f5c778a1c6b1
+  acknowledged_at_commit: 13efb04a7db2cca88d9f8091f9309ebc0dfada72
 - path: docs/05-operations/runbooks/sandbox-bwrap.md
   section: operations
   kind: manual
@@ -842,7 +842,7 @@ docs:
     type: manual
   adapted_heuristic: |
     Re-author when `testpypi-preview.yml` changes its job structure (build/publish/verify), the `TESTPYPI_ENABLED` gate, or the versioning scheme (`<base>.dev<run_id>`).
-  acknowledged_at_commit: 2151b5631d1aff540c1c172229e3f5c778a1c6b1
+  acknowledged_at_commit: 13efb04a7db2cca88d9f8091f9309ebc0dfada72
 
 # ---- 06 flow-participation ---------------------------------------------
 - path: docs/06-flow-participation/README.md
@@ -938,7 +938,7 @@ docs:
     type: manual
   adapted_heuristic: |
     Mirror CHANGELOG.md verbatim: add new version sections in reverse-chronological order (newest first), preserve existing section structure (Features/Bug Fixes subsections), use exact commit/PR links from source, and maintain the four-field frontmatter. Update repo URLs to match current canonical source (mad-core/mad).
-  acknowledged_at_commit: 7d0cd9b75d2c7b08deba5bdc9f4260d54437e1b8
+  acknowledged_at_commit: 13efb04a7db2cca88d9f8091f9309ebc0dfada72
 - path: docs/09-history/migrations.md
   section: history
   kind: heuristic
